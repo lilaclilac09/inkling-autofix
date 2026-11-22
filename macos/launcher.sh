@@ -99,8 +99,8 @@ PY
 
 get_api_key() {
     # KeyShield or another credential provider can replace this function later.
-    local key
-    export -n key
+    local key quoted
+    export -n key quoted
     if [ "${1:-}" = "reset" ]; then
         security delete-generic-password -s "Inkling Autofix" -a tinker >/dev/null 2>&1 || true
     elif key=$(security find-generic-password -s "Inkling Autofix" -a tinker -w 2>/dev/null) && [ -n "$key" ]; then
@@ -113,7 +113,10 @@ text returned of (display dialog "Enter your Tinker API key:" with title "Inklin
 APPLESCRIPT
     ) || return 1
     if [ -z "$key" ]; then message "The API key cannot be empty." >/dev/null; return 1; fi
-    if ! security add-generic-password -U -s "Inkling Autofix" -a tinker -w "$key" >/dev/null 2>&1; then
+    case "$key" in *[![:print:]]*) message "The API key must not contain control characters." >/dev/null; return 1 ;; esac
+    quoted=${key//\\/\\\\}
+    quoted=${quoted//\"/\\\"}
+    if ! printf 'add-generic-password -U -s "Inkling Autofix" -a tinker -w "%s"\n' "$quoted" | security -i >/dev/null 2>&1; then
         message "Could not save the API key in your login Keychain." >/dev/null
         return 1
     fi
@@ -191,7 +194,7 @@ APPLESCRIPT
 }
 
 proposal_flow() {
-    local kind="$1" target request task test_command stamp proposal run_log status answer review_text
+    local kind="$1" target request task test_output pasted input_kind input_file stamp proposal run_log status answer review_text
     while true; do
         if [ "$kind" = "file" ]; then
             target=$(osascript <<'APPLESCRIPT'
@@ -213,26 +216,65 @@ if choice is false then return ""
 return item 1 of choice
 APPLESCRIPT
         ) || return 0
+        stamp="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
+        proposal="$DATA/proposals/$stamp"
+        run_log="$DATA/logs/proposal-$stamp.log"
         case "$request" in
             "Describe the bug")
                 task=$(ask_text "Describe the bug in one sentence:" "") || return 0
                 if [ -z "$task" ]; then message "Please enter a bug description." >/dev/null; continue; fi
                 ;;
             "Fix failing tests")
-                test_command=$(ask_text "Enter the test command:" "python3 -m pytest -q") || return 0
-                if [ -z "$test_command" ]; then message "Please enter a test command." >/dev/null; continue; fi
+                input_kind=$(osascript <<'APPLESCRIPT'
+tell current application to activate
+set choice to choose from list {"Paste failing test output", "Choose an output file"} with title "Inkling Autofix" with prompt "Provide failing output. Tests and commands will NOT be run. Redact sensitive data first."
+if choice is false then return ""
+return item 1 of choice
+APPLESCRIPT
+                ) || return 0
+                test_output="$proposal/test-output.txt"
+                case "$input_kind" in
+                    "Paste failing test output")
+                        pasted=$(ask_text "Paste the failing test output (multiple lines are accepted). Redact sensitive data first:" $'\n\n\n') || return 0
+                        if [ -z "$pasted" ]; then message "Please provide failing test output." >/dev/null; continue; fi
+                        mkdir -p "$proposal"
+                        printf '%s\n' "$pasted" > "$test_output"
+                        ;;
+                    "Choose an output file")
+                        input_file=$(osascript <<'APPLESCRIPT'
+tell current application to activate
+POSIX path of (choose file with prompt "Choose a text file containing failing test output (redact sensitive data first):")
+APPLESCRIPT
+                        ) || return 0
+                        mkdir -p "$proposal"
+                        if ! "$PYTHON" - "$input_file" "$test_output" >> "$LOG" 2>&1 <<'PY'
+import os
+import sys
+from pathlib import Path
+from autofix.proposals import excluded, selected_path, text_file
+source = selected_path(sys.argv[1])
+if any(excluded(part) for part in source.parts):
+    raise ValueError("Choose a non-secret text output file")
+descriptor = os.open(source.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    data = text_file(descriptor, source.name)["data"]
+finally:
+    os.close(descriptor)
+Path(sys.argv[2]).write_bytes(data)
+PY
+                        then failure "Could not read the test output file."; return 0; fi
+                        ;;
+                    *) return 0 ;;
+                esac
                 ;;
             *) return 0 ;;
         esac
         if [ -z "$api_key" ]; then api_key=$(get_api_key) || return 0; fi
-        stamp="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
-        proposal="$DATA/proposals/$stamp"
-        run_log="$DATA/logs/proposal-$stamp.log"
         notice "Working… this can take a few minutes" || true
         if [ "$request" = "Describe the bug" ]; then
             TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose --path "$target" --task "$task" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
         else
-            TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose --path "$target" --fix-tests --test-command "$test_command" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
+            TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose --path "$target" --fix-tests --test-output "$test_output" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
         fi
         status=$?
         cat "$run_log" >> "$LOG"
@@ -264,6 +306,12 @@ for entry in manifest["files"]:
     print(f"{entry['action']}: {entry['path']}")
 if not manifest["files"]:
     print("None — no changes are needed.")
+print("\nValidation: tests and commands were NOT run; review the diff yourself.")
+print("\nSkipped paths (not shown to the model):")
+for name in manifest.get("skipped_paths", []):
+    print(name)
+if not manifest.get("skipped_paths"):
+    print("None")
 PY
         ) || { failure "Could not read the proposal."; return 0; }
         if ! open -e "$proposal/proposal.diff" >> "$LOG" 2>&1; then

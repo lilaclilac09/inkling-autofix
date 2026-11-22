@@ -34,8 +34,7 @@ right-click it, choose **Open**, and confirm. If needed, use **System Settings >
 & Security > Open Anyway** after trying to open it. Do not disable Gatekeeper globally.
 
 Install **Python 3.10+** using the graphical installer at
-[python.org](https://www.python.org/downloads/macos/) first. Git must be available too;
-macOS may offer to install Apple's Command Line Tools. No Terminal commands are required
+[python.org](https://www.python.org/downloads/macos/) first. Git is not needed for proposals or apply. No Terminal commands are required
 for the app's normal workflow. First launch needs Internet access to create a private
 virtual environment and install the bundled package plus pytest. Future launches reuse it;
 a changed bundled source hash triggers setup again.
@@ -43,7 +42,8 @@ a changed bundled source hash triggers setup again.
 1. Double-click the app and enter your Tinker API key in the hidden-answer dialog. It is
    stored in your login Keychain under service **Inkling Autofix**, account **tinker**.
 2. Choose **Fix something in a folder** or **Fix something in a single file**, select the
-   target, and choose **Describe the bug** or **Fix failing tests**.
+   target, and choose **Describe the bug** or **Fix failing tests**. For failing tests,
+   paste the failing output (multiple lines) or choose a text output file; redact sensitive data first.
 3. Wait for the proposal. The diff opens in TextEdit; the approval dialog shows the summary
    and changed files. Inspect the diff, then choose **Apply changes** or **Cancel**.
 4. Only explicit approval invokes apply. Stale originals are refused. Out-of-scope proposals
@@ -51,8 +51,10 @@ a changed bundled source hash triggers setup again.
 
 **Settings** changes the model ID/checkpoint, selects native or JSON tools, and resets the
 API key. Default: `thinkingmachines/Inkling:peft:262144`, Tinker, native tools. The app does
-not commit, push, or publish. Project dependencies/test tools must already be available;
-tests and agent commands still run with your user privileges, not in an OS sandbox.
+not commit, push, or publish. **Validation limits:** the proposal agent has file tools only;
+it cannot execute commands or run tests. The review dialog states:
+"Validation: tests and commands were NOT run; review the diff yourself."
+It also lists skipped paths. Review the diff yourself and validate changes separately before trusting them.
 
 Local data lives in `~/Library/Application Support/Inkling Autofix/`: `model.yaml`, `venv/`,
 `proposals/`, and `logs/launcher.log`. The key is never written there or logged; only the
@@ -74,8 +76,8 @@ branch there, push, or publish. Select a folder or one file, inspect the proposa
 ```sh
 export TINKER_API_KEY='your-api-key'
 autofix propose --path /Users/me/project --task "Fix the empty-input crash" --out /Users/me/proposals/fix-1
-# Or fix failing tests (the command must pass before a proposal is produced):
-autofix propose --path /Users/me/project --fix-tests --test-command 'python3 -m pytest -q' --out /Users/me/proposals/fix-tests
+# Or propose a fix from saved failing output (nothing is executed):
+autofix propose --path /Users/me/project --fix-tests --test-output /Users/me/failing-output.txt --out /Users/me/proposals/fix-tests
 # A single-file selection allows edits only to that file:
 autofix propose --path /Users/me/project/src/parser.py --task "Handle empty input" --out /Users/me/proposals/parser
 
@@ -96,31 +98,50 @@ max_steps: 40
 
 Without that file, these Tinker settings are the defaults. You can override `base_url`,
 choose another supported provider, or select `tool_mode: json`. Export the named key;
-never store it in the YAML file. `--fix-tests` defaults to `python -m pytest -q`.
+never store it in the YAML file. `--fix-tests` requires `--test-output FILE`.
+Legacy `--test-command` is ignored with a warning; it never executes anything.
 
 The workspace root is the enclosing Git toplevel, or the selected folder/file's parent
-when there is no Git repository. A fresh temporary copy supplies context while limiting
-the applicable changes to your selected folder or file. The copy omits `.git`, virtual
-environments, dependency/cache folders, and symlinks. Git is initialized and a baseline
-commit is made **only in that disposable copy**; no local Git identity is needed.
-Commands/dependencies must already be available; skipped virtual environments are not
-copied. Symlink edits and non-regular files are unsupported.
+when there is no Git repository (discovered without invoking Git). **Only the selected
+scope is copied**, never neighboring repository files. There is no Git initialization,
+baseline commit, command execution, or test/check execution in the proposal path.
+Python hashes and `difflib` produce the changes and diff. File tools enforce the scope
+before reading or writing; an attempted out-of-scope write invalidates the proposal.
+
+The copy never follows symlinks and skips special files, binary/undecodable files,
+files over 1 MB, `.git`, `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`,
+`id_ed25519*`, `.ssh/`, `.aws/`, `.netrc`, `.npmrc`, `.pypirc`, names containing
+`credentials` or `secret`, virtual environments, dependencies and caches. These paths
+are unavailable to file tools. Latin-1 and other undecodable non-UTF-8 inputs are
+classified as binary and skipped, rather than crashing diff generation.
+`manifest.json` records skipped names, never contents.
+Name/content filters are not a guarantee that ordinary source files contain no secrets;
+select narrowly and redact sensitive data, including supplied failing output.
+
+**Validation limits:** every proposal summary and successful CLI output states:
+"Validation: tests and commands were NOT run; review the diff yourself."
+No successful test result is inferred from the model's proposed changes.
 
 Use a new or empty output directory for each proposal. It contains `proposal.diff`,
-`summary.txt`, `manifest.json`, and binary-safe new contents under `contents/`. An empty
+`summary.txt`, `manifest.json`, and new text contents under `contents/`. An empty
 proposal is valid. Out-of-scope edits exit **3**, list the offending files, and produce no
-applicable manifest. A failed test/check or other error exits 1. Apply validates every
-path, scope, original SHA-256, and payload before writing anything; stale or newly
+applicable manifest. Other errors exit 1. Apply validates every
+path, scope, original SHA-256, and payload before writing anything; symlinked targets
+or parents, special files, stale originals, or newly
 conflicting files cause refusal with their names. Individual file replacements are atomic,
-but applying several files is not a filesystem transaction. Only apply trusted proposals:
+but applying several files is not a filesystem transaction. An exclusive per-root lock
+under `~/Library/Application Support/Inkling Autofix/locks/` covers hash validation and
+writes; a concurrent second apply revalidates the updated originals and refuses stale changes.
+Only apply trusted proposals:
 the manifest records its destination root and must not be edited to redirect it.
 
-All command subprocesses strip the configured model-key variable, `TINKER_API_KEY`,
+For the separate run/daemon/swarm automation paths, all command subprocesses strip the configured model-key variable, `TINKER_API_KEY`,
 `INKLING_API_KEY`, `OPENAI_API_KEY`, and names matching `AUTOFIX_*KEY*`. This also covers
 existing run, daemon, swarm, checks, adapters, and notifier paths; the model client retains
 its key. **This is not an OS sandbox**: shell commands run with your user privileges,
 and environment filtering does not prevent reading secrets stored in files or other
 host resources. Use trusted projects and an isolated account/container for untrusted code.
+The file-only propose/apply workflow does not expose that shell tool or execute these commands.
 
 ## Using the Tinker API
 
