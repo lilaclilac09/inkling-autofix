@@ -10,8 +10,10 @@ Inkling Autofix for Mac
    using its graphical installer. Git is not needed for proposals or apply.
    No Terminal commands are required.
 3. Double-click the app. First-time setup needs an Internet connection to
-   install the bundled Python package and pytest. Then enter your Tinker API
-   key in the hidden-answer dialog; it is saved in your login Keychain.
+   install the bundled Python package and pytest. Choose how to connect:
+   Direct Tinker (default), KeyShield hosted, or KeyShield local ZK proxy.
+   Existing model.yaml files keep their provider. Enter the selected connection's
+   credential in the hidden-answer dialog; it is saved in your login Keychain.
 4. Pick a folder or file and describe the bug or paste failing test output
    (multiple lines) or choose a text file containing that output. Redact sensitive
    data first. No test-command prompt is used. Review
@@ -21,11 +23,28 @@ Inkling Autofix for Mac
 Data is stored in:
   ~/Library/Application Support/Inkling Autofix/
 This contains venv/, model.yaml, proposals/, and logs/launcher.log. The API key
-is not stored there. Settings lets you change the model/checkpoint and tool
-mode, or reset the API key. To remove the key without the app, open Keychain
+is not stored there. Settings lets you Change connection, change the model/checkpoint
+and tool mode, or reset only the current connection's credential. Changing connection
+clears the in-memory credential. The main menu shows the current connection.
+To remove a credential without the app, open Keychain
 Access, search for "Inkling Autofix", and delete the generic-password item
-with account "tinker". You can delete the Application Support folder and app
+with account "tinker" (direct), "keyshield" (hosted), or "keyshield-local" (local).
+All three use service "Inkling Autofix". Keychain writes use stdin, never token-bearing
+arguments. Only TINKER_API_KEY (direct) or KS_TOKEN (KeyShield) is passed to the
+proposal process, never both. You can delete the Application Support folder and app
 to remove local data; deleting the app alone does not remove the Keychain item.
+
+KeyShield setup
+---------------
+Hosted: enter your HTTPS KeyShield base URL and a proxy-only agent token from
+Developer > Create agent token. The hosted release must include the Tinker upstream
+(keyshield#170), which is not deployed yet. Do not enter a Tinker upstream key here.
+HTTP is accepted only on loopback; other HTTP URLs are rejected.
+Local ZK: run keyshield-proxy run locally first, then enter the local token it
+prints. The app uses http://127.0.0.1:8787 and does not start the proxy itself.
+HTTP loopback KeyShield URLs use the local credential account.
+There is no fallback to direct Tinker on failure. The error states:
+KeyShield request failed. Nothing was sent to Tinker directly.
 
 Validation limits
 -----------------

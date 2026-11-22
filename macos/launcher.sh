@@ -10,7 +10,7 @@ VENV="$DATA/venv"
 MODEL="$DATA/model.yaml"
 LOG="$DATA/logs/launcher.log"
 mkdir -p "$DATA/logs" "$DATA/proposals"
-unset api_key TINKER_API_KEY INKLING_API_KEY OPENAI_API_KEY
+unset api_key TINKER_API_KEY KS_TOKEN INKLING_API_KEY OPENAI_API_KEY
 api_key=""
 trap 'unset api_key' EXIT
 
@@ -86,37 +86,111 @@ setup() {
     fi
     PYTHON="$VENV/bin/python"
     if [ ! -f "$MODEL" ]; then
-        "$PYTHON" - "$MODEL" >> "$LOG" 2>&1 <<'PY'
-import sys
-from pathlib import Path
-import yaml
-Path(sys.argv[1]).write_text(yaml.safe_dump({
-    "provider": "tinker", "model": "thinkingmachines/Inkling:peft:262144", "tool_mode": "native"}))
-PY
-        if [ "$?" -ne 0 ]; then failure "Could not create model settings."; return 1; fi
+        change_connection || return 1
     fi
 }
 
+connection_config() {
+    "$PYTHON" - "$MODEL" "$@" <<'PY'
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+import yaml
+from autofix.providers import LOOPBACK_HOSTS, keyshield_base_url
+path = Path(sys.argv[1])
+settings = yaml.safe_load(path.read_text()) if path.exists() else {
+    "model": "thinkingmachines/Inkling:peft:262144", "tool_mode": "native"}
+if sys.argv[2] == "set":
+    choice, base = sys.argv[3:5]
+    for field in ("provider", "base_url", "api_key_env", "keyshield_base", "keyshield_upstream", "keyshield_path"):
+        settings.pop(field, None)
+    if choice == "Direct Tinker":
+        settings["provider"] = "tinker"
+    elif choice in {"KeyShield hosted", "KeyShield local ZK proxy"}:
+        settings.update(provider="keyshield", keyshield_upstream="tinker", keyshield_base=base)
+        keyshield_base_url(settings)
+    else:
+        raise ValueError("Unknown connection")
+    path.write_text(yaml.safe_dump(settings))
+provider = settings.get("provider", "tinker")
+if provider == "tinker":
+    print("Direct Tinker\ntinker")
+elif provider == "keyshield":
+    if not settings.get("keyshield_base") or settings.get("keyshield_upstream", "tinker") != "tinker":
+        raise ValueError("Configure a KeyShield base URL and the tinker upstream")
+    keyshield_base_url(settings)
+    parts = urlsplit(settings["keyshield_base"])
+    local = parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS
+    print("KeyShield local ZK proxy\nkeyshield-local" if local else "KeyShield hosted\nkeyshield")
+else:
+    raise ValueError("Choose Direct Tinker or a KeyShield connection in model.yaml")
+PY
+}
+
+load_connection() {
+    local info
+    info=$(connection_config show 2>> "$LOG") || { failure "Could not read connection settings."; return 1; }
+    CONNECTION=${info%$'\n'*}
+    KEY_ACCOUNT=${info##*$'\n'}
+}
+
+change_connection() {
+    local choice base
+    while true; do
+        choice=$(osascript - "${CONNECTION:-Direct Tinker}" <<'APPLESCRIPT'
+on run argv
+    tell current application to activate
+    set choice to choose from list {"Direct Tinker", "KeyShield hosted", "KeyShield local ZK proxy"} with title "Inkling Autofix — Connection" with prompt "How should Inkling Autofix connect?" default items {item 1 of argv}
+    if choice is false then return ""
+    return item 1 of choice
+end run
+APPLESCRIPT
+        ) || return 1
+        case "$choice" in
+            "Direct Tinker") base="" ;;
+            "KeyShield hosted")
+                base=$(ask_text "Enter the KeyShield hosted base URL (HTTPS, or HTTP only on loopback):" "") || continue
+                ;;
+            "KeyShield local ZK proxy") base="http://127.0.0.1:8787" ;;
+            *) return 1 ;;
+        esac
+        if ! connection_config set "$choice" "$base" >/dev/null 2>> "$LOG"; then
+            message "Could not save the connection. KeyShield base must be an HTTPS URL or HTTP only on loopback, without credentials, query, or fragment." >/dev/null
+            continue
+        fi
+        api_key=""
+        load_connection || return 1
+        return 0
+    done
+}
+
 get_api_key() {
-    # KeyShield or another credential provider can replace this function later.
-    local key quoted
+    local key quoted prompt
     export -n key quoted
     if [ "${1:-}" = "reset" ]; then
-        security delete-generic-password -s "Inkling Autofix" -a tinker >/dev/null 2>&1 || true
-    elif key=$(security find-generic-password -s "Inkling Autofix" -a tinker -w 2>/dev/null) && [ -n "$key" ]; then
+        security delete-generic-password -s "Inkling Autofix" -a "$KEY_ACCOUNT" >/dev/null 2>&1 || true
+    elif key=$(security find-generic-password -s "Inkling Autofix" -a "$KEY_ACCOUNT" -w 2>/dev/null) && [ -n "$key" ]; then
         printf '%s' "$key"
         return 0
     fi
-    key=$(osascript <<'APPLESCRIPT'
-tell current application to activate
-text returned of (display dialog "Enter your Tinker API key:" with title "Inkling Autofix" default answer "" with hidden answer buttons {"Cancel", "Save key"} default button "Save key" cancel button "Cancel")
+    case "$KEY_ACCOUNT" in
+        tinker) prompt="Enter your Tinker API key:" ;;
+        keyshield) prompt="Enter your KeyShield proxy-only agent token (Developer > Create agent token)" ;;
+        keyshield-local) prompt="Enter the local token printed by keyshield-proxy" ;;
+        *) return 1 ;;
+    esac
+    key=$(osascript - "$prompt" <<'APPLESCRIPT'
+on run argv
+    tell current application to activate
+    return text returned of (display dialog (item 1 of argv) with title "Inkling Autofix" default answer "" with hidden answer buttons {"Cancel", "Save key"} default button "Save key" cancel button "Cancel")
+end run
 APPLESCRIPT
     ) || return 1
     if [ -z "$key" ]; then message "The API key cannot be empty." >/dev/null; return 1; fi
     case "$key" in *[![:print:]]*) message "The API key must not contain control characters." >/dev/null; return 1 ;; esac
     quoted=${key//\\/\\\\}
     quoted=${quoted//\"/\\\"}
-    if ! printf 'add-generic-password -U -s "Inkling Autofix" -a tinker -w "%s"\n' "$quoted" | security -i >/dev/null 2>&1; then
+    if ! printf 'add-generic-password -U -s "Inkling Autofix" -a %s -w "%s"\n' "$KEY_ACCOUNT" "$quoted" | security -i >/dev/null 2>&1; then
         message "Could not save the API key in your login Keychain." >/dev/null
         return 1
     fi
@@ -152,12 +226,13 @@ settings() {
     while true; do
         choice=$(osascript <<'APPLESCRIPT'
 tell current application to activate
-set choice to choose from list {"Change model ID or checkpoint", "Change tool mode", "Reset API key", "Back"} with title "Inkling Autofix — Settings" with prompt "What would you like to change?"
+set choice to choose from list {"Change connection", "Change model ID or checkpoint", "Change tool mode", "Reset API key", "Back"} with title "Inkling Autofix — Settings" with prompt "What would you like to change?"
 if choice is false then return "Back"
 return item 1 of choice
 APPLESCRIPT
         ) || return 0
         case "$choice" in
+            "Change connection") change_connection || true ;;
             "Change model ID or checkpoint")
                 current=$(model_setting model 2>> "$LOG") || { failure "Could not read model settings."; continue; }
                 value=$(ask_text "Enter a model ID or Tinker sampler checkpoint:" "$current") || continue
@@ -191,6 +266,14 @@ end run
 APPLESCRIPT
     ) || return 1
     [ "$answer" = "Fix something else" ]
+}
+
+run_proposal() {
+    if [ "$KEY_ACCOUNT" = "tinker" ]; then
+        TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose "$@"
+    else
+        KS_TOKEN="$api_key" "$PYTHON" -m autofix propose "$@"
+    fi
 }
 
 proposal_flow() {
@@ -272,9 +355,9 @@ PY
         if [ -z "$api_key" ]; then api_key=$(get_api_key) || return 0; fi
         notice "Working… this can take a few minutes" || true
         if [ "$request" = "Describe the bug" ]; then
-            TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose --path "$target" --task "$task" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
+            run_proposal --path "$target" --task "$task" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
         else
-            TINKER_API_KEY="$api_key" "$PYTHON" -m autofix propose --path "$target" --fix-tests --test-output "$test_output" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
+            run_proposal --path "$target" --fix-tests --test-output "$test_output" --out "$proposal" --model-config "$MODEL" > "$run_log" 2>&1
         fi
         status=$?
         cat "$run_log" >> "$LOG"
@@ -290,7 +373,11 @@ APPLESCRIPT
             if [ "$answer" = "Choose a larger folder" ]; then kind="folder"; continue; fi
             return 0
         elif [ "$status" -ne 0 ]; then
-            failure "Could not prepare the proposal."
+            if [ "$KEY_ACCOUNT" = "tinker" ]; then
+                failure "Could not prepare the proposal."
+            else
+                failure "KeyShield request failed. Nothing was sent to Tinker directly."
+            fi
             finish_flow "No changes were applied."; return $?
         fi
         review_text=$("$PYTHON" - "$proposal" 2>> "$LOG" <<'PY'
@@ -342,13 +429,16 @@ find_python || exit 1
 BASE_PYTHON_DIR=$(dirname "$PYTHON")
 setup || exit 1
 export PATH="$VENV/bin:$BASE_PYTHON_DIR:$PATH"
+load_connection || exit 1
 api_key=$(get_api_key) || exit 0
 while true; do
-    choice=$(osascript <<'APPLESCRIPT'
-tell current application to activate
-set choice to choose from list {"Fix something in a folder", "Fix something in a single file", "Settings", "Quit"} with title "Inkling Autofix" with prompt "What would you like to do?"
-if choice is false then return "Quit"
-return item 1 of choice
+    choice=$(osascript - "$CONNECTION" <<'APPLESCRIPT'
+on run argv
+    tell current application to activate
+    set choice to choose from list {"Fix something in a folder", "Fix something in a single file", "Settings", "Quit"} with title "Inkling Autofix" with prompt ("What would you like to do?" & return & "Current connection: " & item 1 of argv)
+    if choice is false then return "Quit"
+    return item 1 of choice
+end run
 APPLESCRIPT
     ) || break
     case "$choice" in
