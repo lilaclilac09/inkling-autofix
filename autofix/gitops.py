@@ -24,6 +24,7 @@ def prepare(root, template, base):
 
 
 def complete(root, branch, base, summary, check, github, dry_run):
+    summary = summary.strip() or "Complete automated task"
     if git(root, "branch", "--show-current") != branch or branch == base:
         raise RuntimeError("Branch changed unexpectedly; refusing publication")
     result = command(root, check) if check else None

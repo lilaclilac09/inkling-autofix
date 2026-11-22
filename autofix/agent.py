@@ -120,9 +120,7 @@ class Agent:
                     if name not in definitions:
                         raise ValueError(f"Unavailable tool: {name}")
                     if name == "finish":
-                        if not isinstance(args.get("summary"), str) or not args["summary"].strip():
-                            raise ValueError("finish requires a nonempty summary")
-                        return args["summary"]
+                        return args.get("summary", "").strip() or "Complete automated task"
                     result = self.execute(name, args)
                 except Exception as exc:
                     result = {"error": str(exc)[:LIMIT]}

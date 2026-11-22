@@ -183,6 +183,16 @@ def test_check_cannot_switch_to_base(repo):
     assert git(repo, "rev-list", "--count", "main") == "1"
 
 
+def test_empty_finish_summary_uses_default(repo, fake_model):
+    fake_model["script"] = [("finish", {"summary": "  \n"})]
+    summary = Agent(repo, fake_model["model"], "fake").run("Do nothing")
+    assert summary == "Complete automated task"
+    branch = prepare(repo, "custom", "main")
+    (repo / "note.txt").write_text("done")
+    complete(repo, branch, "main", "", None, None, True)
+    assert git(repo, "show", "-s", "--format=%s") == "autofix: Complete automated task"
+
+
 def test_daemon_schedule_and_error_logging(monkeypatch, tmp_path):
     clock = [0]
     invocations = []
