@@ -121,6 +121,33 @@ schedule. Golden-reference pattern enforcement is manual and requires an explici
 Never assume a report's proposed external changes have actually been applied; that is your
 notifier's responsibility. Review script permissions and report contents before enabling it.
 
+## Parallel swarm and worktree isolation
+
+```sh
+autofix swarm fix_failing_tests lint_and_typecheck_fix --repo myrepo --agents 2
+autofix swarm --automation daily-tests another-job --repo myrepo --agents 3
+```
+
+Each job gets a detached Git worktree from the same base snapshot, then its own fix branch.
+With one template, `--agents N` creates N independent attempts; with several templates or
+automation names, N is the concurrency limit. Automation names supply their configured params.
+Worker branches commit locally only. The runner records overlapping changed files, then merges
+successful worker branches in input order into `autofix/swarm-<timestamp>`. A resolver agent
+handles real Git conflicts, followed by that job's check_command. Failed resolutions/checks
+abort that merge and report the skipped branch. If abort cannot safely restore the prior
+commit, integration stops for manual inspection. Swarm never pushes or opens a PR automatically;
+inspect and publish the integration branch yourself.
+
+A repository-level advisory lock in the common Git directory rejects other autofix runs
+while a run/swarm/review owns the repository. Workers only operate on separate worktrees.
+The daemon uses worktrees as well; it does not switch or dirty your original checkout.
+Worktrees are kept in a sibling `.<repo>-autofix-worktrees/` directory, including failures,
+for inspection. Remove them manually with `git worktree remove PATH` after saving any work;
+no forced cleanup is performed. Branches remain available. Install target dependencies where
+each worktree can use them; ignored build artifacts and virtual environments are not copied.
+The lock coordinates autofix only, not editors, other Git clients, or shell subprocesses.
+This implementation uses POSIX file locks (Linux/macOS).
+
 ## Running in the Mac background (optional launchd)
 
 Copy `examples/com.aileen.autofix.plist` to `~/Library/LaunchAgents/`, replace all `/Users/aileen` paths with your own absolute paths, and fill in the key (set file permissions to `600` and do not commit it), or use a secure credential injection method appropriate for your setup.
@@ -139,7 +166,7 @@ launchd does not inherit terminal exports or virtual environments; the example s
 - Each run creates `autofix/<template>-<timestamp>` from the local `base_branch`. There is no automatic fetch/pull; update the base yourself. A clean working tree is required. The runner's Git workflow never pushes the base branch. It commits only after successful completion and passing checks, and pushes/opens a PR only when GitHub is configured and gh is installed. Keep human review and branch protection enabled.
 - File tools are restricted to the repository root and reject `.git`, path traversal, and symlinks pointing outside the repository. **run_command is an arbitrary shell with the repository as cwd, not a sandbox**: the model, tests, and dependency installation scripts can still access the host, network, and credentials, and may bypass the Git restrictions in the prompt. Do not treat path checks or dry-run as security isolation.
 - Models make mistakes; issues, CI logs, and repository contents may contain prompt injection. Passing checks does not guarantee correctness; adjust the default test command for each project. Keep sensitive files away from the model; newly generated files may be included in commits, so review before publishing.
-- Tool output is truncated to roughly 16K characters. Commands time out after 120 seconds by default, with a maximum of 600 seconds. max_steps limits chat rounds, not tokens or cost. There is no OS sandbox, budget control, persistent task queue, concurrency lock, or automatic conflict recovery. Do not run concurrently against the same repository. Issues that remain open will be attempted again on the next run (there is no deduplication state).
+- Tool output is truncated to roughly 16K characters. Commands time out after 120 seconds by default, with a maximum of 600 seconds. max_steps limits chat rounds, not tokens or cost. There is no OS sandbox, budget control, or persistent task queue. Use swarm for concurrent jobs; independent autofix commands on a locked repository fail instead of sharing a working tree. Issues that remain open will be attempted again on the next run (there is no deduplication state).
 - Execution stops at `finish` or max_steps. Runs that do not finish or fail checks are not committed/pushed. Failures preserve the current branch and files for investigation. No diff means no empty commit/PR.
 
 ## Development and testing

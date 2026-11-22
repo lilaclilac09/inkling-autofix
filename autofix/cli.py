@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from .runner import DATA, daemon, load_config, run, templates
+from .swarm import swarm
 
 
 def main():
@@ -18,6 +19,11 @@ def main():
     execute.add_argument("--task")
     execute.add_argument("--dry-run", action="store_true")
     commands.add_parser("daemon")
+    parallel = commands.add_parser("swarm")
+    parallel.add_argument("templates", nargs="*")
+    parallel.add_argument("--automation", nargs="+", default=[])
+    parallel.add_argument("--repo", required=True)
+    parallel.add_argument("--agents", type=int, default=3)
     args = parser.parse_args()
     try:
         if args.action == "init":
@@ -36,6 +42,22 @@ def main():
             logs = args.config.resolve().parent / "logs"
             if args.action == "daemon":
                 daemon(config, logs)
+            elif args.action == "swarm":
+                if args.templates and args.automation:
+                    raise ValueError("Use template names or --automation, not both")
+                jobs = [(name, {}) for name in args.templates]
+                if args.automation:
+                    for name in args.automation:
+                        item = next(a for a in config.get("automations", []) if a["name"] == name)
+                        if item["repo"] != args.repo:
+                            raise ValueError("Swarm automations must target --repo")
+                        reserved = {"name", "template", "repo", "schedule_minutes", "enabled", "params"}
+                        params = {**item.get("params", {}),
+                                  **{k: v for k, v in item.items() if k not in reserved}}
+                        jobs.append((item["template"], params))
+                elif len(jobs) == 1:
+                    jobs *= args.agents
+                print(json.dumps(swarm(config, args.repo, jobs, args.agents, logs), indent=2))
             else:
                 params = {"task": args.task} if args.task is not None else {}
                 print(json.dumps(run(config, args.template, args.repo, params,

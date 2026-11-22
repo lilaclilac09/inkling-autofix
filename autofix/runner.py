@@ -11,6 +11,7 @@ from .agent import Agent
 from .gitops import complete, prepare
 from .providers import model_config
 from .events import command_context
+from .workspaces import repo_config, repo_lock, worktree
 
 
 DATA = Path(__file__).parent
@@ -33,6 +34,22 @@ def gh(root, *args):
 
 
 def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
+    repo = next(r for r in config["repos"] if r["name"] == repo_name)
+    root = Path(repo["path"]).resolve()
+    with repo_lock(root):
+        return _run(config, template_name, repo_name, params, dry_run, log_dir)
+
+
+def isolated_run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
+    repo = next(r for r in config["repos"] if r["name"] == repo_name)
+    root = Path(repo["path"]).resolve()
+    with repo_lock(root):
+        path = worktree(root, repo["base_branch"])
+        return _run(repo_config(config, repo_name, path), template_name, repo_name,
+                    params, dry_run, log_dir)
+
+
+def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
     template = templates()[template_name]
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
     root = Path(repo["path"]).resolve()
@@ -85,6 +102,7 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
     for issue, context in contexts:
         agent = Agent(root, model, api_key)
         record = {"time": datetime.now(timezone.utc).isoformat(), "template": template_name,
+                  "worktree": str(root),
                   "repo": repo_name, "issue": issue["number"] if issue else None,
                   "status": "error"}
         try:
@@ -134,7 +152,7 @@ def daemon(config, log_dir):
             params = {**automation.get("params", {}),
                       **{k: v for k, v in automation.items() if k not in reserved}}
             try:
-                run(config, automation["template"], automation["repo"], params, log_dir=log_dir)
+                isolated_run(config, automation["template"], automation["repo"], params, log_dir=log_dir)
             except Exception as exc:
                 log_dir.mkdir(parents=True, exist_ok=True)
                 with (log_dir / "daemon.jsonl").open("a") as stream:

@@ -16,11 +16,10 @@ def prepare(root, template, base):
         raise RuntimeError("Repository must be clean before a run")
     if git(root, "rev-parse", "--show-toplevel") != str(root):
         raise RuntimeError("Configured path must be the Git repository root")
-    git(root, "switch", base)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     slug = re.sub(r"[^a-zA-Z0-9_-]", "-", template)
     branch = f"autofix/{slug}-{stamp}"
-    git(root, "switch", "-c", branch)
+    git(root, "switch", "-c", branch, base)
     return branch
 
 
