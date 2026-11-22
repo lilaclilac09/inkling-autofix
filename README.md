@@ -127,7 +127,10 @@ applicable manifest. Other errors exit 1. Apply validates every
 path, scope, original SHA-256, and payload before writing anything; symlinked targets
 or parents, special files, stale originals, or newly
 conflicting files cause refusal with their names. Individual file replacements are atomic,
-but applying several files is not a filesystem transaction. Only apply trusted proposals:
+but applying several files is not a filesystem transaction. An exclusive per-root lock
+under `~/Library/Application Support/Inkling Autofix/locks/` covers hash validation and
+writes; a concurrent second apply revalidates the updated originals and refuses stale changes.
+Only apply trusted proposals:
 the manifest records its destination root and must not be edited to redirect it.
 
 For the separate run/daemon/swarm automation paths, all command subprocesses strip the configured model-key variable, `TINKER_API_KEY`,

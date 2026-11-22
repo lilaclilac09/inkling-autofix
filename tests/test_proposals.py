@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import yaml
@@ -95,6 +97,49 @@ def test_private_proposal_permissions_and_original_mode(tmp_path, fake_model, mo
     (out / "manifest.json").write_text(json.dumps(manifest))
     apply_proposal(out)
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_concurrent_apply_serializes_hash_validation_and_writes(tmp_path, fake_model, model_file, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "code.txt").write_text("original")
+    fake_model["script"] = [("write_file", {"path": "code.txt", "content": "fixed"}),
+                            ("finish", {"summary": "Fix"})]
+    out = tmp_path / "proposal"
+    propose(project, out, task="Fix", model_file=model_file)
+    replacing, release, second_started, second_hashed = [threading.Event() for _ in range(4)]
+    local = threading.local()
+    original_replace, original_digest = os.replace, proposals.digest
+    def delayed_replace(*args):
+        if local.name == "first":
+            replacing.set()
+            assert release.wait(5)
+        return original_replace(*args)
+    def tracked_digest(data):
+        if getattr(local, "name", None) == "second" and data == b"original":
+            second_hashed.set()
+        return original_digest(data)
+    def apply(name):
+        local.name = name
+        if name == "second":
+            second_started.set()
+        return apply_proposal(out)
+    monkeypatch.setattr(os, "replace", delayed_replace)
+    monkeypatch.setattr(proposals, "digest", tracked_digest)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(apply, "first")
+        try:
+            assert replacing.wait(5)
+            second = pool.submit(apply, "second")
+            assert second_started.wait(5)
+            assert not second_hashed.wait(0.2)
+        finally:
+            release.set()
+        assert first.result(timeout=5)["applied"] == 1
+        with pytest.raises(ValueError, match="Original files changed"):
+            second.result(timeout=5)
+    assert (project / "code.txt").read_text() == "fixed"
 
 
 def test_temporary_workspace_inside_source_via_symlink_is_not_recopied(tmp_path, fake_model, model_file, monkeypatch):

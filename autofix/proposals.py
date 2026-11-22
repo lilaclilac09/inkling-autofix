@@ -6,6 +6,8 @@ import fnmatch
 import stat
 import tempfile
 import warnings
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 import yaml
@@ -308,6 +310,21 @@ def propose(path, out, task=None, fix_tests=False, test_command=None, model_file
         return manifest
 
 
+@contextmanager
+def apply_lock(root):
+    directory = Path.home() / "Library/Application Support/Inkling Autofix/locks"
+    private_directory(directory)
+    descriptor = os.open(directory / (digest(str(root).encode("utf-8")) + ".lock"),
+                         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "r+") as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 def apply_proposal(proposal):
     directory = Path(proposal).expanduser().resolve(strict=True)
     manifest = json.loads(safe_path(directory, "manifest.json").read_text())
@@ -316,6 +333,11 @@ def apply_proposal(proposal):
     root = Path(manifest["root"])
     if not root.is_absolute() or root.resolve(strict=True) != root or not root.is_dir():
         raise ValueError("Proposal root must still be the same real directory")
+    with apply_lock(root):
+        return apply_plan(directory, manifest, root)
+
+
+def apply_plan(directory, manifest, root):
     scope = manifest["scope"]
     relative_path(scope["path"], allow_root=scope["kind"] == "directory")
     plans, stale, seen = [], [], set()
