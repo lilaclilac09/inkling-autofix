@@ -13,6 +13,7 @@ from .runner import _run, templates
 from .workspaces import repo_config, repo_lock, worktree
 from .logs import safe_log_dir
 from .review import review_tree
+from .environment import command_env, model_commands
 
 
 class SwarmFailure(RuntimeError):
@@ -33,6 +34,7 @@ def stop_swarm(result, error, log_dir):
     raise SwarmFailure(result)
 
 
+@model_commands
 def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
     if agents < 1 or not jobs:
         raise ValueError("swarm requires jobs and agents >= 1")
@@ -91,7 +93,7 @@ def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
                 result["overlaps"][candidate] = overlap
                 prior = git(integration, "rev-parse", "HEAD")
                 merged = subprocess.run(["git", "merge", "--no-commit", "--no-ff", candidate],
-                                        cwd=integration, capture_output=True, text=True)
+                                        cwd=integration, capture_output=True, text=True, env=command_env())
                 resolver = None
                 try:
                     conflicts = git(integration, "diff", "--name-only", "--diff-filter=U").splitlines()
@@ -131,7 +133,7 @@ def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
                 except Exception as exc:
                     # Abort only the in-progress merge in this dedicated integration worktree.
                     abort = subprocess.run(["git", "merge", "--abort"], cwd=integration,
-                                           capture_output=True, text=True)
+                                           capture_output=True, text=True, env=command_env())
                     result["failures"].append({"branch": candidate, "error": str(exc)})
                     if (abort.returncode or git(integration, "rev-parse", "HEAD") != prior
                             or git(integration, "status", "--porcelain")):
