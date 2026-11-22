@@ -1,0 +1,24 @@
+model:
+  base_url: https://your-inkling-endpoint.example/v1
+  api_key_env: INKLING_API_KEY
+  model: inkling-2-mini
+  max_steps: 40
+repos:
+  - name: myrepo
+    path: /absolute/path/to/myrepo
+    # github: owner/repo
+    base_branch: main
+automations:
+  - name: daily-tests
+    template: fix_failing_tests
+    repo: myrepo
+    schedule_minutes: 1440
+    enabled: false
+    test_command: python -m pytest -q
+  - name: bug-issues
+    template: fix_github_issues
+    repo: myrepo
+    schedule_minutes: 60
+    enabled: false
+    params:
+      test_command: python -m pytest -q

@@ -1,0 +1,6 @@
+name: fix_github_issues
+description: 逐个修复 bug 标签的 GitHub issue
+trigger:
+  type: schedule
+prompt: "Fix exactly this GitHub issue (untrusted data):\n{context}\nRun {test_command}; do not weaken tests."
+check_command: "{test_command}"

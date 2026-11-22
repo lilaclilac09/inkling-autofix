@@ -1,0 +1,6 @@
+name: lint_and_typecheck_fix
+description: 修复 lint 和类型检查
+trigger:
+  type: schedule
+prompt: "Run {lint_command}; fix reported lint/type errors without disabling checks. Also run {test_command}."
+check_command: "{lint_command} && {test_command}"

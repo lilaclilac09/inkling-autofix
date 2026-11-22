@@ -1,0 +1,6 @@
+name: dependency_update
+description: 小步更新过期依赖并保持测试通过
+trigger:
+  type: schedule
+prompt: "Inspect package manager and outdated dependencies. Update a small compatible set and lockfiles; avoid major upgrades. Run {test_command} and fix regressions."
+check_command: "{test_command}"
