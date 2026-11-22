@@ -57,8 +57,12 @@ def same_repo_ci_source(root, github, run):
 
 def same_repo_pr(pr, github):
     source = pr.get("headRepository") or {}
-    return (not pr.get("isCrossRepository", True)
-            and source.get("nameWithOwner", "").casefold() == github.casefold())
+    owner = (pr.get("headRepositoryOwner") or {}).get("login")
+    name = source.get("name")
+    return (pr.get("isCrossRepository") is False
+            and isinstance(owner, str) and bool(owner)
+            and isinstance(name, str) and bool(name)
+            and f"{owner}/{name}".casefold() == github.casefold())
 
 
 def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
@@ -129,7 +133,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
                              "--json", fields))
         if trigger == "github_ci":
             prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
-                                "--limit", "200", "--json", "number,headRefName,author,isCrossRepository,headRepository"))
+                                "--limit", "200", "--json", "number,headRefName,author,isCrossRepository,headRepository,headRepositoryOwner"))
             allowed = {p["headRefName"] for p in prs
                        if same_repo_pr(p, repo["github"])
                        and not p["headRefName"].startswith("autofix/")
@@ -143,7 +147,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
                 if trigger != "github_ci":
                     prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
                                         "--head", failed["headBranch"], "--limit", "200", "--json",
-                                        "number,headRefName,isCrossRepository,headRepository"))
+                                        "number,headRefName,isCrossRepository,headRepository,headRepositoryOwner"))
                 source_prs = [p for p in prs if p["headRefName"] == failed["headBranch"]
                               and same_repo_pr(p, repo["github"])]
                 if not source_prs:

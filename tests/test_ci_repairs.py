@@ -8,6 +8,25 @@ from autofix.swarm import swarm
 from test_runner import config, fake_model, repo
 
 
+@pytest.mark.parametrize("owner,name,cross,expected", [
+    ("owner", "repo", False, True),
+    ("OWNER", "Repo", False, True),
+    ("fork", "repo", True, False),
+    ("fork", "repo", False, False),
+    ("owner", "other", False, False),
+    (None, "repo", False, False),
+    ("owner", None, False, False),
+    ("", "repo", False, False),
+    ("owner", "repo", None, False),
+])
+def test_same_repo_pr_uses_real_gh_repository_shape(owner, name, cross, expected):
+    pr = {"headRepository": {"id": "repo-id", "name": name} if name is not None else None,
+          "headRepositoryOwner": {"login": owner} if owner is not None else None}
+    if cross is not None:
+        pr["isCrossRepository"] = cross
+    assert runner.same_repo_pr(pr, "owner/repo") is expected
+
+
 @pytest.mark.parametrize("template", ["fix_ci_failure", "auto-fix-ci"])
 @pytest.mark.parametrize("advanced", [False, True])
 def test_ci_fix_starts_at_failed_pr_commit(repo, fake_model, monkeypatch, tmp_path, template, advanced):
@@ -31,11 +50,14 @@ def test_ci_fix_starts_at_failed_pr_commit(repo, fake_model, monkeypatch, tmp_pa
             assert "headSha" in args[args.index("--json") + 1]
             return json.dumps([{"databaseId": 42, "headBranch": "feature", "headSha": sha}])
         if args[:2] == ("pr", "list"):
-            assert "headRepository" in args[args.index("--json") + 1]
+            fields = args[args.index("--json") + 1].split(",")
+            assert {"headRepository", "headRepositoryOwner", "isCrossRepository"} <= set(fields)
             return json.dumps([{"number": 8, "headRefName": "feature", "isCrossRepository": True,
-                                "headRepository": {"nameWithOwner": "fork/repo"}, "author": {"login": "human"}},
+                                "headRepository": {"id": "fork-id", "name": "repo"},
+                                "headRepositoryOwner": {"login": "fork"}, "author": {"login": "human"}},
                                {"number": 7, "headRefName": "feature", "isCrossRepository": False,
-                                "headRepository": {"nameWithOwner": "owner/repo"}, "author": {"login": "human"}}])
+                                "headRepository": {"id": "repo-id", "name": "repo"},
+                                "headRepositoryOwner": {"login": "owner"}, "author": {"login": "human"}}])
         if args == ("api", "repos/owner/repo/actions/runs/42"):
             return json.dumps({"head_repository": {"full_name": "owner/repo"},
                                "head_sha": sha, "head_branch": "feature"})
@@ -86,7 +108,8 @@ def test_ci_rejects_untrusted_source_before_checkout(repo, fake_model, monkeypat
             return json.dumps([{"databaseId": 42, "headBranch": branch, "headSha": sha}])
         if args[:2] == ("pr", "list"):
             return json.dumps([{"number": 7, "headRefName": branch, "isCrossRepository": False,
-                                "headRepository": {"nameWithOwner": "owner/repo"}, "author": {"login": "human"}}])
+                                "headRepository": {"id": "repo-id", "name": "repo"},
+                                "headRepositoryOwner": {"login": "owner"}, "author": {"login": "human"}}])
         if args == ("api", "repos/owner/repo/actions/runs/42"):
             full_name = "owner/repo" if source == "unrelated_commit" else "fork/repo"
             return json.dumps({"head_repository": None if source == "missing" else {"full_name": full_name},
