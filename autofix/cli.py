@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .runner import DATA, daemon, load_config, run, templates
 from .swarm import swarm
+from .review import review
 
 
 def main():
@@ -24,6 +25,12 @@ def main():
     parallel.add_argument("--automation", nargs="+", default=[])
     parallel.add_argument("--repo", required=True)
     parallel.add_argument("--agents", type=int, default=3)
+    inspect = commands.add_parser("review")
+    inspect.add_argument("--repo", required=True)
+    target = inspect.add_mutually_exclusive_group()
+    target.add_argument("--branch")
+    target.add_argument("--pr", type=int)
+    inspect.add_argument("--agents", type=int)
     args = parser.parse_args()
     try:
         if args.action == "init":
@@ -42,6 +49,8 @@ def main():
             logs = args.config.resolve().parent / "logs"
             if args.action == "daemon":
                 daemon(config, logs)
+            elif args.action == "review":
+                print(json.dumps(review(config, args.repo, args.branch, args.pr, args.agents, logs), indent=2))
             elif args.action == "swarm":
                 if args.templates and args.automation:
                     raise ValueError("Use template names or --automation, not both")

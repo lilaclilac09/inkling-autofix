@@ -13,6 +13,8 @@ from .providers import model_config
 from .events import command_context
 from .workspaces import repo_config, repo_lock, worktree
 from .logs import safe_log_dir
+from .review import review_tree
+from .gitops import git
 
 
 DATA = Path(__file__).parent
@@ -126,7 +128,11 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
                 reports.mkdir(exist_ok=True)
                 (reports / f"{branch.rsplit('/', 1)[-1]}.md").write_text(summary + "\n")
             outcome = complete(root, branch, repo["base_branch"], summary, check,
-                               repo.get("github"), dry_run)
+                               repo.get("github"), dry_run,
+                               (lambda: review_tree(config, root, git(root, "diff",
+                                   f"{repo['base_branch']}...HEAD"), log_dir))
+                               if params.get("review_before_pr", repo.get("review_before_pr",
+                                   config.get("review_before_pr", False))) else None)
             record.update(outcome, summary=summary, status="ok")
             if params.get("notify_command") and not dry_run:
                 subprocess.run(params["notify_command"], shell=True, cwd=root, input=summary,

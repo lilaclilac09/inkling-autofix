@@ -7,6 +7,11 @@ model:
   max_steps: 40
   # Tinker: remove base_url and api_key_env above to use the preset defaults.
   # Set model to thinkingmachines/Inkling:peft:262144 or your tinker://.../sampler_weights/... path.
+review_before_pr: false
+issue_limit: 200
+review:
+  roles: [correctness, security, tests/style]
+  max_diff_chars: 100000
 repos:
   - name: myrepo
     path: /absolute/path/to/myrepo

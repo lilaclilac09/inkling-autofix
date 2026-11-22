@@ -23,7 +23,7 @@ def prepare(root, template, base):
     return branch
 
 
-def complete(root, branch, base, summary, check, github, dry_run):
+def complete(root, branch, base, summary, check, github, dry_run, review_callback=None):
     summary = summary.strip() or "Complete automated task"
     if git(root, "branch", "--show-current") != branch or branch == base:
         raise RuntimeError("Branch changed unexpectedly; refusing publication")
@@ -36,6 +36,10 @@ def complete(root, branch, base, summary, check, github, dry_run):
         return {"changed": False, "check": result}
     git(root, "add", "--all")
     git(root, "commit", "-m", "autofix: " + summary.splitlines()[0][:100])
+    review = review_callback() if review_callback else None
+    if review and review["blocking"]:
+        return {"changed": True, "check": result, "pr": None, "review": review,
+                "publication_blocked": True}
     pr = None
     if github and shutil.which("gh") and not dry_run:
         git(root, "push", "-u", "origin", f"HEAD:refs/heads/{branch}")
@@ -43,4 +47,4 @@ def complete(root, branch, base, summary, check, github, dry_run):
                              "--head", branch, "--title", "autofix: " + summary.splitlines()[0][:100],
                              "--body", summary], cwd=root, check=True,
                             capture_output=True, text=True).stdout.strip()
-    return {"changed": True, "check": result, "pr": pr}
+    return {"changed": True, "check": result, "pr": pr, "review": review}

@@ -148,6 +148,40 @@ each worktree can use them; ignored build artifacts and virtual environments are
 The lock coordinates autofix only, not editors, other Git clients, or shell subprocesses.
 This implementation uses POSIX file locks (Linux/macOS).
 
+## Multi-agent review and publication gate
+
+```sh
+autofix review --repo myrepo --branch autofix/some-fix --agents 3
+autofix review --repo myrepo --pr 42
+```
+
+Reviewers default to correctness, security, and tests/style. Configure `review.roles` to
+change the role list; `--agents N` cycles through these roles for N reviewers. Reviewers run
+in parallel, then a read-only aggregator deduplicates their structured findings. They receive
+only list_files, read_file, and finish: no shell, writes, Git commands, or application tests.
+A separate detached worktree holds the reviewed snapshot. Branch reviews compare against
+base_branch using a merge-base diff. PR reviews fetch the PR head from origin and obtain the
+diff through gh; they require repo.github, a GitHub origin, and gh authentication.
+Reports are saved under the effective log directory's `reports/`. PR reviews also post a PR
+comment using that report; standalone branch reviews do not publish anything.
+
+Set `review_before_pr: true` at the top level, on a repo, or in automation params to gate
+publication. After a checked local commit, reviewers and the aggregator must return valid
+results without **any** blocking finding before push/PR creation. An aggregator cannot erase
+a reviewer's blocker. Invalid JSON, an oversized diff (`review.max_diff_chars`, default 100000),
+or a failed reviewer fails closed. A blocking review returns `publication_blocked: true`
+with the local commit retained and no push/PR. Dry-run still performs configured reviews.
+There is no automatic reviewer-driven fix loop. Review is a model opinion, not a security
+guarantee. Even the read-only file tools can see sensitive repository files: isolate clones.
+
+Logs requested inside a configured repository are redirected to its common Git directory's
+`autofix-logs/` (including daemon, swarm, and review logs) so they never dirty the working tree.
+Other relative log paths resolve from the caller's working directory; CLI defaults resolve
+from the config directory. `issue_limit` controls GitHub issue polling (default 200), and an
+automation parameter of the same name overrides it. Polls beyond that bound need a larger
+limit or an external paginated command adapter. Command timeouts kill the entire shell process
+group; a deliberately detached subprocess is outside that group and requires OS isolation.
+
 ## Running in the Mac background (optional launchd)
 
 Copy `examples/com.aileen.autofix.plist` to `~/Library/LaunchAgents/`, replace all `/Users/aileen` paths with your own absolute paths, and fill in the key (set file permissions to `600` and do not commit it), or use a secure credential injection method appropriate for your setup.
