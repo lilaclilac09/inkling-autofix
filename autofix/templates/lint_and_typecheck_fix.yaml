@@ -1,0 +1,7 @@
+name: lint_and_typecheck_fix
+category: Core
+description: Fix lint and type-check errors
+trigger:
+  type: schedule
+prompt: "Run {lint_command}; fix reported lint/type errors without disabling checks. Also run {test_command}."
+check_command: "{lint_command} && {test_command}"

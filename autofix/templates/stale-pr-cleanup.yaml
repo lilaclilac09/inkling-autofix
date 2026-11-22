@@ -1,0 +1,9 @@
+name: stale-pr-cleanup
+category: CI/CD & Release
+description: "Stale PR Cleanup"
+trigger:
+  type: schedule
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Use gh to find open PRs not updated in over a week. Check mergeability, describe conflicts or blockers, and draft a friendly targeted nudge for each author. Put proposed comments in the report; deliver only through the configured notifier.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

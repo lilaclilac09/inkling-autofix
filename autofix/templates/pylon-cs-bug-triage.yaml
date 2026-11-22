@@ -1,0 +1,9 @@
+name: pylon-cs-bug-triage
+category: Monitoring & Triage
+description: "Triage Customer Bug Tickets"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: pylon. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Triage this new Pylon customer ticket. Attempt a safe reproduction, investigate the root cause in code, assess customer impact, and produce findings and actionable next steps for support.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

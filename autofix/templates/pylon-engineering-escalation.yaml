@@ -1,0 +1,9 @@
+name: pylon-engineering-escalation
+category: Monitoring & Triage
+description: "Investigate Support Escalations"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: pylon, slack, linear. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Investigate the escalated Pylon ticket. Reproduce the bug, trace its root cause, suggest a scoped fix, identify a likely owner from code ownership evidence, and draft an internal Slack reply and Linear ticket if used by this team. External posting goes through the configured notifier.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

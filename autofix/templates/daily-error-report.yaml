@@ -1,0 +1,9 @@
+name: daily-error-report
+category: Monitoring & Triage
+description: "Daily Error Report"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: datadog, slack. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Analyze supplied Datadog errors for new or spiking patterns across services. Write a concise daily report with impact, trends, evidence links, and recommended owners/actions for Slack.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

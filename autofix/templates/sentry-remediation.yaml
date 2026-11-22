@@ -1,0 +1,10 @@
+name: sentry-remediation
+category: Monitoring & Triage
+description: "Fix Sentry Errors Daily"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: sentry. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Inspect the supplied top unresolved Sentry errors, prioritize frequency and impact, reproduce a concrete error and fix its underlying cause with regression tests. Summarize remaining errors for separate follow-up runs.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

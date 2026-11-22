@@ -1,0 +1,10 @@
+name: auto-fix-ci
+category: CI/CD & Release
+description: "Fix CI Failures"
+trigger:
+  type: github_ci
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Investigate the supplied failed CI run on a non-automation PR. Read failure logs, identify the root cause, make a minimal fix, and verify the relevant checks. Do not weaken tests. The runner publishes a separate fix branch/PR, never directly pushes the original PR.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

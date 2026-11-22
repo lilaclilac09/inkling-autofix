@@ -1,0 +1,10 @@
+name: weekly-changelog
+category: CI/CD & Release
+description: "Weekly Changelog"
+trigger:
+  type: schedule
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Use gh to inspect the past week's merged PRs. Categorize notable changes for users, include PR links, update CHANGELOG.md following its existing style, and prepare a changelog update PR.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

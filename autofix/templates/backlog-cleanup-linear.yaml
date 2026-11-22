@@ -1,0 +1,9 @@
+name: backlog-cleanup-linear
+category: Project Management
+description: "Backlog Cleanup"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: linear. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Review the supplied Linear backlog for stale, duplicate, and untriaged issues. Propose closures and fill in suggested labels, priorities, and estimates with rationale. Do not fabricate issue details; submit proposed changes through the configured notifier.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

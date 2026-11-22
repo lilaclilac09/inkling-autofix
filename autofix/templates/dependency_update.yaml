@@ -1,0 +1,7 @@
+name: dependency_update
+category: Core
+description: Update outdated dependencies in small steps while keeping tests green
+trigger:
+  type: schedule
+prompt: "Inspect package manager and outdated dependencies. Update a small compatible set and lockfiles; avoid major upgrades. Run {test_command} and fix regressions."
+check_command: "{test_command}"
