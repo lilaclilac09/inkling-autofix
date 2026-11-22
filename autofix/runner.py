@@ -89,7 +89,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             for issue in issues:
                 detail = json.loads(gh(root, "issue", "view", str(issue["number"]),
                                        "--repo", repo["github"], "--json", "comments"))
-                requests = [c for c in detail["comments"] if "/devin" in c["body"]]
+                requests = [c for c in detail["comments"] if "/autofix" in c["body"]]
                 if requests:
                     selected.append({**issue, "requests": requests})
             issues = selected
@@ -106,8 +106,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
                                 "--limit", "200", "--json", "number,headRefName,author,isCrossRepository"))
             allowed = {p["headRefName"] for p in prs
-                       if not p["headRefName"].startswith(("autofix/", "devin/"))
-                       and "devin" not in p["author"]["login"].lower()
+                       if not p["headRefName"].startswith("autofix/")
                        and not p["author"].get("is_bot", False)}
             runs = [r for r in runs if r["headBranch"] in allowed][:1]
         if runs:

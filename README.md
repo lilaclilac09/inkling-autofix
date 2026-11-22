@@ -1,6 +1,6 @@
 # Inkling Autofix
 
-A small, self-hosted, "Devin-like" Python repair runner. Connect any model that supports **OpenAI Chat Completions tool calling** (including your Inkling model) to read code, run commands, edit files, check changes, and commit in local clones. Run it on a schedule and configure GitHub to open PRs automatically. Requires Python 3.10+; this is not a cloud service and does not require an actual OpenAI API key.
+A small, self-hosted Python automation and repair runner. Connect any model that supports **OpenAI Chat Completions tool calling** (including your Inkling model) to read code, run commands, edit files, check changes, and commit in local clones. Run it on a schedule and configure GitHub to open PRs automatically. Requires Python 3.10+; this is not a cloud service and does not require an actual OpenAI API key.
 
 ## Five-minute MacBook quick start
 
@@ -111,7 +111,7 @@ the normal command limit. Adapter scripts own authentication, cursors, filtering
 in dry-run. Do not interpolate model content into shell commands. Report templates write
 under `reports/`; use the notifier to post to Slack, Notion, or ticketing systems.
 
-`issue-fix` polls open GitHub issues for comments containing `/devin`, `auto-fix-ci` polls
+`issue-fix` polls open GitHub issues for comments containing `/autofix`, `auto-fix-ci` polls
 failed pull-request runs, and merge/dead-code watches poll the latest base-branch commit
 via `gh`. Polling is not a webhook service and has no built-in deduplication: use external
 adapter cursors or disable a completed automation to avoid duplicate work. The CI template

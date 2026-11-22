@@ -60,3 +60,22 @@ def test_swarm_ci_poll_uses_branch_name_not_snapshot(repo, fake_model, monkeypat
     monkeypatch.setattr(runner, "gh", fake_gh)
     result = swarm(cfg, "demo", [("fix_ci_failure", {})], 1, tmp_path / "logs")
     assert calls and not result["workers"]
+
+
+def test_issue_fix_uses_autofix_comment_command(repo, fake_model, monkeypatch, tmp_path):
+    monkeypatch.setenv("INKLING_API_KEY", "fake")
+    cfg = config(repo, fake_model)
+    cfg["repos"][0]["github"] = "owner/repo"
+
+    def fake_gh(root, *args):
+        if args[:2] == ("issue", "list"):
+            return json.dumps([{"number": 1, "title": "Bug", "body": "Investigate"}])
+        assert args[:2] == ("issue", "view")
+        return json.dumps({"comments": [{"body": "/autofix please investigate"}]})
+
+    monkeypatch.setattr(runner, "gh", fake_gh)
+    fake_model["script"] = [("finish", {"summary": "No changes"})]
+    result = runner.run(cfg, "issue-fix", "demo", {"check_command": "true"},
+                        True, tmp_path / "logs")
+    assert len(result) == 1
+    assert "/autofix please investigate" in fake_model["calls"][0]["messages"][1]["content"]
