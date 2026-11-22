@@ -26,6 +26,44 @@ autofix daemon
 
 Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. The model must support `tools`/`tool_calls`; unsupported models fail with a clear error instead of falling back to parsing chat text.
 
+## Using the Tinker API
+
+Tinker has an [OpenAI-compatible inference API](https://tinker-docs.thinkingmachines.ai/inference/openai/overview/).
+Replace the entire `model` section with:
+
+```yaml
+model:
+  provider: tinker
+  api_key_env: TINKER_API_KEY
+  model: thinkingmachines/Inkling:peft:262144
+  tool_mode: native
+  max_steps: 40
+```
+
+Export `TINKER_API_KEY` before running. The preset base URL is
+`https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1`.
+The OpenAI SDK sends `Authorization: Bearer <TINKER_API_KEY>`.
+Use the exact Tinker model ID you have access to, or your sampling checkpoint path,
+such as `tinker://YOUR-RUN/sampler_weights/000080` (not a training checkpoint).
+To select a compatible context length, the documented form is
+`thinkingmachines/Inkling:peft:262144;tinker://YOUR-RUN/sampler_weights/000080`.
+`inkling-2-mini` is not a verified Tinker ID. Production inference requires separate access:
+override `base_url` with `https://inference.thinkingmachines.dev/prod/oai/api/v1`
+and use an inference model ID such as `thinkingmachines/Inkling:peft:262144:inference`
+(prepend this plus `;` to a checkpoint path for a production checkpoint).
+
+The [Chat Completions documentation](https://tinker-docs.thinkingmachines.ai/inference/openai/chat-completions/)
+supports native tool calls on chat models, not all Base models. We leave `tool_choice`
+and `parallel_tool_calls` at their recommended defaults. If your checkpoint returns
+plain text instead, set `tool_mode: json` for **any** provider. Autofix then supplies
+tool schemas in the prompt, requests a plain-text JSON object containing
+`tool_calls: [{name, arguments}]`, and accepts either bare JSON or one fenced JSON block.
+It does not send `tools` or `response_format` (Tinker does not support structured output).
+Malformed responses fail closed; there is no automatic fallback or text execution.
+Reasoning fields returned by the server are retained in conversation history.
+These settings follow official documentation; real Tinker authentication, model access,
+and checkpoint behavior have not been tested here without credentials.
+
 ## Templates
 
 Template sources are in `templates/` (a link to the packaged directory `autofix/templates/`). They use Python `str.format` placeholders, not Jinja; write literal braces as `{{` / `}}`.

@@ -9,6 +9,7 @@ import yaml
 
 from .agent import Agent
 from .gitops import complete, prepare
+from .providers import model_config
 
 
 DATA = Path(__file__).parent
@@ -37,7 +38,8 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
     params = dict(params or {})
     values = {"task": "", "test_command": "python -m pytest -q",
               "lint_command": "ruff check . && mypy .", "context": "", **params}
-    api_key = os.environ.get(config["model"].get("api_key_env", "INKLING_API_KEY"))
+    model = model_config(config["model"])
+    api_key = os.environ.get(model["api_key_env"])
     if not api_key:
         raise ValueError("Missing API key environment variable")
     if template_name == "custom" and not values["task"].strip():
@@ -61,7 +63,7 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
         contexts = [(None, values["context"])]
     results = []
     for issue, context in contexts:
-        agent = Agent(root, config["model"], api_key)
+        agent = Agent(root, model, api_key)
         record = {"time": datetime.now(timezone.utc).isoformat(), "template": template_name,
                   "repo": repo_name, "issue": issue["number"] if issue else None,
                   "status": "error"}
