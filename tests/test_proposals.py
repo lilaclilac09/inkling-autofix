@@ -389,6 +389,37 @@ def test_fix_tests_requires_output(tmp_path):
         propose(tmp_path, tmp_path / "proposal", fix_tests=True)
 
 
+@pytest.mark.parametrize("direction", ["file-to-directory", "directory-to-file", "unplanned-file"])
+def test_apply_file_directory_transitions(tmp_path, fake_model, model_file, direction):
+    project = tmp_path / "project"
+    project.mkdir()
+    node = project / "node"
+    if direction == "file-to-directory":
+        node.write_text("old file")
+        script = [("delete_file", {"path": "node"}),
+                  ("write_file", {"path": "node/child.txt", "content": "new child"})]
+    else:
+        (node / "nested").mkdir(parents=True)
+        (node / "nested/old.txt").write_text("old child")
+        script = [("delete_file", {"path": "node/nested/old.txt"}),
+                  ("write_file", {"path": "node", "content": "new file"})]
+    fake_model["script"] = [*script, ("finish", {"summary": "Replace node"})]
+    out = tmp_path / "proposal"
+    propose(project, out, task="Replace node", model_file=model_file)
+    if direction == "unplanned-file":
+        (node / "unplanned.txt").write_text("concurrent new file")
+        with pytest.raises(ValueError, match="unplanned file"):
+            apply_proposal(out)
+        assert (node / "nested/old.txt").read_text() == "old child"
+        assert (node / "unplanned.txt").read_text() == "concurrent new file"
+    else:
+        assert apply_proposal(out)["applied"] == 2
+        if direction == "file-to-directory":
+            assert (node / "child.txt").read_text() == "new child"
+        else:
+            assert node.read_text() == "new file"
+
+
 @pytest.mark.parametrize("kind", ["parent-link", "fifo"])
 def test_apply_refuses_nonregular_targets_or_symlink_parents(tmp_path, fake_model, model_file, kind):
     project = tmp_path / "project"

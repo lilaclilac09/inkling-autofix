@@ -193,6 +193,9 @@ class ProposalAgent(Agent):
             content = source.replace(old, args["new"], 1)
         if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES or "\x00" in content:
             raise ValueError("Only text files up to 1 MB are supported")
+        if path.is_dir():
+            for directory, _, _ in os.walk(path, topdown=False):
+                Path(directory).rmdir()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return "Written"
@@ -340,10 +343,40 @@ def apply_proposal(proposal):
         return apply_plan(directory, manifest, root)
 
 
+def planned_path(root, value, deletions):
+    relative = relative_path(value)
+    path = root
+    for part in relative.parts:
+        path = path / part
+        if path.is_symlink():
+            raise ValueError(f"Symlinks are not supported: {value}")
+        if path.exists() and not (path.is_dir() or path.is_file()):
+            raise ValueError(f"Only regular files and directories are supported: {value}")
+        if path != root / relative and path.is_file():
+            if path.relative_to(root).as_posix() in deletions:
+                return root / relative
+            raise ValueError(f"Parent is not a directory: {value}")
+    return path
+
+
+def replacement_directories(root, destination, deletions):
+    directories = {destination}
+    for child in destination.iterdir():
+        if child.is_symlink() or not (child.is_file() or child.is_dir()):
+            raise ValueError(f"Unsafe directory replacement: {child.relative_to(root)}")
+        if child.is_dir():
+            directories.update(replacement_directories(root, child, deletions))
+        elif child.relative_to(root).as_posix() not in deletions:
+            raise ValueError(f"Directory contains an unplanned file: {child.relative_to(root)}")
+    return directories
+
+
 def apply_plan(directory, manifest, root):
     scope = manifest["scope"]
     relative_path(scope["path"], allow_root=scope["kind"] == "directory")
     plans, stale, seen = [], [], set()
+    deletions = {entry["path"] for entry in manifest["files"] if entry["action"] == "delete"}
+    remove_directories = set()
     for entry in manifest["files"]:
         name, action = entry["path"], entry["action"]
         if not in_scope(name, scope):
@@ -351,11 +384,14 @@ def apply_plan(directory, manifest, root):
         if name in seen or action not in {"add", "modify", "delete"}:
             raise ValueError(f"Invalid or duplicate proposal entry: {name}")
         seen.add(name)
-        destination = safe_path(root, name)
+        destination = planned_path(root, name, deletions)
         expected = entry["original_sha256"]
         if (action == "add") != (expected is None):
             raise ValueError(f"Invalid original hash for {name}")
-        if (destination.exists() and not destination.is_file()
+        replacing_directory = action == "add" and destination.is_dir()
+        if replacing_directory:
+            remove_directories.update(replacement_directories(root, destination, deletions))
+        if (destination.exists() and not destination.is_file() and not replacing_directory
                 or (digest(destination.read_bytes()) if destination.is_file() else None) != expected):
             stale.append(name)
         data, mode = None, None
@@ -369,19 +405,23 @@ def apply_plan(directory, manifest, root):
         plans.append((destination, data, mode))
     if stale:
         raise ValueError("Original files changed since proposal; nothing applied:\n" + "\n".join(stale))
-    for destination, data, mode in plans:
-        safe_path(root, destination.relative_to(root).as_posix())
+    for destination, data, _ in sorted(plans, key=lambda item: len(item[0].parts), reverse=True):
         if data is None:
-            destination.unlink()
-        else:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            descriptor, temporary = tempfile.mkstemp(prefix=".autofix-", dir=destination.parent)
-            try:
-                with os.fdopen(descriptor, "wb") as stream:
-                    stream.write(data)
-                os.chmod(temporary, mode)
-                os.replace(temporary, destination)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
+            safe_path(root, destination.relative_to(root).as_posix()).unlink()
+    for path in sorted(remove_directories, key=lambda item: len(item.parts), reverse=True):
+        safe_path(root, path.relative_to(root).as_posix()).rmdir()
+    for destination, data, mode in plans:
+        if data is None:
+            continue
+        safe_path(root, destination.relative_to(root).as_posix())
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=".autofix-", dir=destination.parent)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(data)
+            os.chmod(temporary, mode)
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
     return {"applied": len(plans), "root": str(root)}
