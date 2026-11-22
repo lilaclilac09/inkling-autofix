@@ -2,6 +2,10 @@
 
 A small, self-hosted Python automation and repair runner. Connect any model that supports **OpenAI Chat Completions tool calling** (including your Inkling model) to read code, run commands, edit files, check changes, and commit in local clones. Run it on a schedule and configure GitHub to open PRs automatically. Requires Python 3.10+; this is not a cloud service and does not require an actual OpenAI API key.
 
+Status: LOCAL ONLY — self-hosted CLI and unsigned Mac app; next human action: validate the intended model connection in an isolated clone and the native app on macOS before relying on it.
+
+Acceptance audit (2026-11-22): GitHub homepage is unset, Pages is disabled and deployment records are empty; an unlisted external deployment has not been ruled out. Linux tests with stubbed native dialogs are not macOS visual/interaction proof. Native 390×844 stills and an interaction walkthrough remain unavailable in this environment. Historical PRs #1–#4 do not pass the current fenced evidence-closer checker; see [audit findings and verification limits](notes/acceptance-audit-2026-11-22.md).
+
 ## Five-minute MacBook quick start
 
 Install Python 3.10+ and Git first. Prepare a separate, clean repository clone, a Git commit identity, and the project's own test environment. Optionally install the GitHub CLI: `brew install gh && gh auth login`.
