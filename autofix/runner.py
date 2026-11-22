@@ -16,6 +16,7 @@ from .workspaces import repo_config, repo_lock, worktree
 from .logs import safe_log_dir
 from .review import review_tree
 from .gitops import git
+from .environment import command_env, model_commands
 
 
 DATA = Path(__file__).parent
@@ -34,7 +35,7 @@ def load_config(path):
 
 def gh(root, *args):
     return subprocess.run(["gh", *args], cwd=root, check=True,
-                          capture_output=True, text=True, timeout=120).stdout
+                          capture_output=True, text=True, timeout=120, env=command_env()).stdout
 
 
 def same_repo_ci_source(root, github, run):
@@ -65,6 +66,7 @@ def same_repo_pr(pr, github):
             and f"{owner}/{name}".casefold() == github.casefold())
 
 
+@model_commands
 def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
     log_dir = safe_log_dir(config, log_dir)
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
@@ -73,6 +75,7 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
         return _run(config, template_name, repo_name, params, dry_run, log_dir)
 
 
+@model_commands
 def isolated_run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
     log_dir = safe_log_dir(config, log_dir)
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
@@ -83,6 +86,7 @@ def isolated_run(config, template_name, repo_name, params=None, dry_run=False, l
                     params, dry_run, log_dir)
 
 
+@model_commands
 def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
     log_dir = safe_log_dir(config, log_dir)
     template = templates()[template_name]
@@ -159,7 +163,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         runs = selected
         if runs:
             exists = subprocess.run(["git", "cat-file", "-e", f"{start_ref}^{{commit}}"],
-                                    cwd=root, capture_output=True)
+                                    cwd=root, capture_output=True, env=command_env())
             if exists.returncode:
                 git(root, "fetch", "origin", start_ref)
                 if git(root, "rev-parse", "FETCH_HEAD") != start_ref:
@@ -202,7 +206,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             record.update(outcome, summary=summary, status="ok")
             if params.get("notify_command") and not dry_run:
                 subprocess.run(params["notify_command"], shell=True, cwd=root, input=summary,
-                               text=True, check=True, timeout=120, capture_output=True)
+                               text=True, check=True, timeout=120, capture_output=True, env=command_env())
             if issue and outcome.get("pr"):
                 gh(root, "issue", "comment", str(issue["number"]), "--repo", repo["github"],
                    "--body", f"Autofix proposed a fix: {outcome['pr']}")
@@ -217,6 +221,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
     return results
 
 
+@model_commands
 def daemon(config, log_dir):
     log_dir = safe_log_dir(config, log_dir)
     due = {}

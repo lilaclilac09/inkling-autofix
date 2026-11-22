@@ -11,6 +11,7 @@ from .gitops import git
 from .logs import safe_log_dir
 from .providers import model_config
 from .workspaces import repo_lock, worktree
+from .environment import command_env, model_commands
 
 
 DEFAULT_ROLES = ["correctness", "security", "tests/style"]
@@ -35,6 +36,7 @@ def findings(summary):
         raise RuntimeError("Invalid review result; review gate fails closed") from exc
 
 
+@model_commands
 def review_tree(config, root, diff, log_dir, roles=None, require_multi=False):
     settings = config.get("review", {})
     roles = roles if roles is not None else settings.get("roles", DEFAULT_ROLES)
@@ -98,6 +100,7 @@ def review_tree(config, root, diff, log_dir, roles=None, require_multi=False):
             stream.write(json.dumps({"report": str(report_path), "usage": usages}) + "\n")
 
 
+@model_commands
 def review(config, repo_name, branch=None, pr=None, agents=None, log_dir=Path("logs")):
     if branch and pr:
         raise ValueError("Choose --branch or --pr, not both")
@@ -118,7 +121,7 @@ def review(config, repo_name, branch=None, pr=None, agents=None, log_dir=Path("l
             git(root, "fetch", "origin", f"refs/pull/{int(pr)}/head")
             head = git(root, "rev-parse", "FETCH_HEAD")
             diff = subprocess.run(["gh", "pr", "diff", str(pr), "--repo", repo["github"]],
-                                  cwd=root, check=True, capture_output=True, text=True).stdout
+                                  cwd=root, check=True, capture_output=True, text=True, env=command_env()).stdout
         else:
             head = git(root, "rev-parse", branch or "HEAD")
             diff = git(root, "diff", f"{repo['base_branch']}...{head}")
@@ -127,5 +130,5 @@ def review(config, repo_name, branch=None, pr=None, agents=None, log_dir=Path("l
         if pr:
             subprocess.run(["gh", "pr", "comment", str(pr), "--repo", repo["github"],
                             "--body-file", result["report"]], cwd=root, check=True,
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, env=command_env())
         return result

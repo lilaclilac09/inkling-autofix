@@ -26,6 +26,63 @@ autofix daemon
 
 Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. Native mode requires `tools`/`tool_calls`; unsupported models fail with a clear error. Explicitly select `tool_mode: json` for the plain-text protocol described below.
 
+## Propose, review, then apply locally
+
+These commands do not require `config.yaml`. They never commit to your project, create a
+branch there, push, or publish. Select a folder or one file, inspect the proposal, and run
+`apply` only after explicitly approving it:
+
+```sh
+export TINKER_API_KEY='your-api-key'
+autofix propose --path /Users/me/project --task "Fix the empty-input crash" --out /Users/me/proposals/fix-1
+# Or fix failing tests (the command must pass before a proposal is produced):
+autofix propose --path /Users/me/project --fix-tests --test-command 'python3 -m pytest -q' --out /Users/me/proposals/fix-tests
+# A single-file selection allows edits only to that file:
+autofix propose --path /Users/me/project/src/parser.py --task "Handle empty input" --out /Users/me/proposals/parser
+
+# Inspect proposal.diff and summary.txt. Only after approval:
+autofix apply --proposal /Users/me/proposals/fix-1
+```
+
+Optional `--model-config /Users/me/model.yaml` accepts the model settings directly, without
+a `model:` wrapper. For example:
+
+```yaml
+provider: tinker
+model: thinkingmachines/Inkling:peft:262144
+api_key_env: TINKER_API_KEY
+tool_mode: native
+max_steps: 40
+```
+
+Without that file, these Tinker settings are the defaults. You can override `base_url`,
+choose another supported provider, or select `tool_mode: json`. Export the named key;
+never store it in the YAML file. `--fix-tests` defaults to `python -m pytest -q`.
+
+The workspace root is the enclosing Git toplevel, or the selected folder/file's parent
+when there is no Git repository. A fresh temporary copy supplies context while limiting
+the applicable changes to your selected folder or file. The copy omits `.git`, virtual
+environments, dependency/cache folders, and symlinks. Git is initialized and a baseline
+commit is made **only in that disposable copy**; no local Git identity is needed.
+Commands/dependencies must already be available; skipped virtual environments are not
+copied. Symlink edits and non-regular files are unsupported.
+
+Use a new or empty output directory for each proposal. It contains `proposal.diff`,
+`summary.txt`, `manifest.json`, and binary-safe new contents under `contents/`. An empty
+proposal is valid. Out-of-scope edits exit **3**, list the offending files, and produce no
+applicable manifest. A failed test/check or other error exits 1. Apply validates every
+path, scope, original SHA-256, and payload before writing anything; stale or newly
+conflicting files cause refusal with their names. Individual file replacements are atomic,
+but applying several files is not a filesystem transaction. Only apply trusted proposals:
+the manifest records its destination root and must not be edited to redirect it.
+
+All command subprocesses strip the configured model-key variable, `TINKER_API_KEY`,
+`INKLING_API_KEY`, `OPENAI_API_KEY`, and names matching `AUTOFIX_*KEY*`. This also covers
+existing run, daemon, swarm, checks, adapters, and notifier paths; the model client retains
+its key. **This is not an OS sandbox**: shell commands run with your user privileges,
+and environment filtering does not prevent reading secrets stored in files or other
+host resources. Use trusted projects and an isolated account/container for untrusted code.
+
 ## Using the Tinker API
 
 Tinker has an [OpenAI-compatible inference API](https://tinker-docs.thinkingmachines.ai/inference/openai/overview/).
