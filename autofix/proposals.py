@@ -227,6 +227,38 @@ def proposal_model(path=None):
     return model_config({"provider": "tinker", "model": "thinkingmachines/Inkling:peft:262144", **settings})
 
 
+def file_diff(name, old, new):
+    def label(value):
+        return json.dumps(value, ensure_ascii=False) if any(
+            character.isspace() or character in '\\"' for character in value) else value
+
+    before, after = label(f"a/{name}"), label(f"b/{name}")
+    result = f"diff --git {before} {after}\n"
+    if old is None:
+        result += f"new file mode {stat.S_IFREG | new['mode']:06o}\n"
+    elif new is None:
+        result += f"deleted file mode {stat.S_IFREG | old['mode']:06o}\n"
+    elif old["mode"] != new["mode"]:
+        result += f"old mode {stat.S_IFREG | old['mode']:06o}\nnew mode {stat.S_IFREG | new['mode']:06o}\n"
+    before, after = before if old else "/dev/null", after if new else "/dev/null"
+    headers = f"--- {before}\n+++ {after}\n"
+    try:
+        old_text = old["data"].decode("utf-8") if old else ""
+        new_text = new["data"].decode("utf-8") if new else ""
+        if "\x00" in old_text or "\x00" in new_text:
+            raise ValueError("Binary contents")
+    except ValueError:
+        return result + headers + "(binary file changed)\n"
+    lines = difflib.unified_diff(old_text.splitlines(keepends=True), new_text.splitlines(keepends=True),
+                                 fromfile=before, tofile=after)
+    body = "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+                   for line in lines)
+    if not body:
+        note = "empty file added" if old is None else "empty file deleted" if new is None else "file mode changed"
+        body = headers + f"({note})\n"
+    return result + body
+
+
 def propose(path, out, task=None, fix_tests=False, test_command=None, model_file=None, test_output=None):
     if bool(task and task.strip()) == bool(fix_tests):
         raise ValueError("Choose exactly one nonempty task or fix-tests")
@@ -287,16 +319,7 @@ def propose(path, out, task=None, fix_tests=False, test_command=None, model_file
         outside = [name for name in changed if not in_scope(name, scope)]
         if outside:
             raise ScopeError("Out-of-scope changes:\n" + "\n".join(outside))
-        diff = ""
-        for name in changed:
-            old, new = original.get(name), updated.get(name)
-            lines = difflib.unified_diff(
-                old["data"].decode("utf-8").splitlines(keepends=True) if old else [],
-                new["data"].decode("utf-8").splitlines(keepends=True) if new else [],
-                fromfile=f"a/{name}" if old else "/dev/null",
-                tofile=f"b/{name}" if new else "/dev/null")
-            diff += "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
-                            for line in lines)
+        diff = "".join(file_diff(name, original.get(name), updated.get(name)) for name in changed)
         private_directory(output)
         if supplied_output and supplied_output.parent == output:
             supplied_output.chmod(0o600)

@@ -76,6 +76,43 @@ def test_empty_proposal(tmp_path, fake_model, model_file):
     assert list(project.iterdir()) == []
 
 
+def test_every_manifest_path_is_visible_in_diff_including_empty_files(tmp_path, fake_model, model_file):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "old-empty.txt").write_bytes(b"")
+    (project / "code.txt").write_text("before\n")
+    fake_model["script"] = [("write_file", {"path": "new-empty.txt", "content": ""}),
+                            ("delete_file", {"path": "old-empty.txt"}),
+                            ("write_file", {"path": "code.txt", "content": "after\n"}),
+                            ("finish", {"summary": "Propose file changes"})]
+    out = tmp_path / "proposal"
+    manifest = propose(project, out, task="Fix files", model_file=model_file)
+    diff = (out / "proposal.diff").read_text()
+    assert len(manifest["files"]) == 3
+    for entry in manifest["files"]:
+        assert f"diff --git a/{entry['path']} b/{entry['path']}\n" in diff
+    assert "--- /dev/null\n+++ b/new-empty.txt\n(empty file added)\n" in diff
+    assert "--- a/old-empty.txt\n+++ /dev/null\n(empty file deleted)\n" in diff
+    assert "-before\n+after\n" in diff
+    assert (project / "old-empty.txt").exists() and not (project / "new-empty.txt").exists()
+    assert apply_proposal(out)["applied"] == 3
+    assert (project / "new-empty.txt").read_bytes() == b""
+    assert not (project / "old-empty.txt").exists()
+
+
+@pytest.mark.parametrize("before,after,expected", [(b"unchanged\n", b"unchanged\n", "(file mode changed)"),
+                                                   (b"\x00old", b"\x00new", "(binary file changed)"),
+                                                   (b"caf\xe9", b"caf\xe8", "(binary file changed)")])
+def test_non_text_or_mode_only_changes_have_visible_preview(before, after, expected):
+    old = {"data": before, "mode": 0o644}
+    new = {"data": after, "mode": 0o755}
+    diff = proposals.file_diff("fixture.dat", old, new)
+    assert "diff --git a/fixture.dat b/fixture.dat\n" in diff
+    assert "--- a/fixture.dat\n+++ b/fixture.dat\n" in diff
+    assert "old mode 100644\nnew mode 100755\n" in diff
+    assert expected in diff
+
+
 def test_non_utf8_input_is_skipped_as_binary_without_diff_failure(tmp_path, fake_model, model_file):
     project = tmp_path / "project"
     project.mkdir()
