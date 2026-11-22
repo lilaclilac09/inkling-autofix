@@ -389,6 +389,17 @@ def test_fix_tests_requires_output(tmp_path):
         propose(tmp_path, tmp_path / "proposal", fix_tests=True)
 
 
+def test_selected_file_with_symlinked_parent_is_refused(tmp_path, fake_model, model_file):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "code.txt").write_text("original")
+    alias = tmp_path / "alias"
+    alias.symlink_to(project, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlinks"):
+        propose(alias / "code.txt", tmp_path / "proposal", task="Fix", model_file=model_file)
+    assert fake_model["calls"] == []
+
+
 @pytest.mark.parametrize("direction", ["file-to-directory", "directory-to-file", "unplanned-file"])
 def test_apply_file_directory_transitions(tmp_path, fake_model, model_file, direction):
     project = tmp_path / "project"

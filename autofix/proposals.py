@@ -29,6 +29,13 @@ def excluded(name):
         fnmatch.fnmatchcase(name.lower(), pattern) for pattern in SECRET_PATTERNS)
 
 
+def selected_path(value):
+    path = Path(value).expanduser().absolute()
+    if any(item.is_symlink() for item in (path, *path.parents)):
+        raise ValueError("Select a path without symlinks, including its parent directories")
+    return path.resolve(strict=True)
+
+
 class ScopeError(ValueError):
     pass
 
@@ -229,14 +236,11 @@ def propose(path, out, task=None, fix_tests=False, test_command=None, model_file
         raise ValueError("--fix-tests requires --test-output FILE containing failing output")
     if test_output and not fix_tests:
         raise ValueError("--test-output requires --fix-tests")
-    selected = Path(path).expanduser()
-    if selected.is_symlink():
-        raise ValueError("Select a regular file or directory, not a symlink")
-    selected = selected.resolve(strict=True)
+    selected = selected_path(path)
     if excluded(selected.name) or any(part in SKIP for part in selected.parts) or not (selected.is_file() or selected.is_dir()):
         raise ValueError("Select a project folder or regular file outside .git")
     output = Path(out).expanduser().resolve()
-    supplied_output = Path(test_output).expanduser().absolute() if test_output else None
+    supplied_output = selected_path(test_output) if test_output else None
     if output.exists() and (not output.is_dir() or any(item != supplied_output for item in output.iterdir())):
         raise ValueError("Proposal output must be a new or empty directory")
     model = proposal_model(model_file)

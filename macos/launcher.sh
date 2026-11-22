@@ -251,8 +251,8 @@ APPLESCRIPT
 import os
 import sys
 from pathlib import Path
-from autofix.proposals import excluded, text_file
-source = Path(sys.argv[1])
+from autofix.proposals import excluded, selected_path, text_file
+source = selected_path(sys.argv[1])
 if any(excluded(part) for part in source.parts):
     raise ValueError("Choose a non-secret text output file")
 descriptor = os.open(source.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
