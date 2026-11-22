@@ -112,7 +112,9 @@ The copy never follows symlinks and skips special files, binary/undecodable file
 files over 1 MB, `.git`, `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`,
 `id_ed25519*`, `.ssh/`, `.aws/`, `.netrc`, `.npmrc`, `.pypirc`, names containing
 `credentials` or `secret`, virtual environments, dependencies and caches. These paths
-are unavailable to file tools. `manifest.json` records skipped names, never contents.
+are unavailable to file tools. Latin-1 and other undecodable non-UTF-8 inputs are
+classified as binary and skipped, rather than crashing diff generation.
+`manifest.json` records skipped names, never contents.
 Name/content filters are not a guarantee that ordinary source files contain no secrets;
 select narrowly and redact sensitive data, including supplied failing output.
 

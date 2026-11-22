@@ -97,7 +97,10 @@ def text_file(directory_fd, name):
         data = stream.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES or any(byte < 32 and byte not in (9, 10, 13) for byte in data):
         raise ValueError("Not a small regular text file")
-    data.decode("utf-8")
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("Undecodable files are excluded as binary") from None
     return {"data": data, "sha256": digest(data), "mode": stat.S_IMODE(metadata.st_mode) & 0o777}
 
 

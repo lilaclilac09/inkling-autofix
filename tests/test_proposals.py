@@ -76,6 +76,24 @@ def test_empty_proposal(tmp_path, fake_model, model_file):
     assert list(project.iterdir()) == []
 
 
+def test_non_utf8_input_is_skipped_as_binary_without_diff_failure(tmp_path, fake_model, model_file):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "notes.txt").write_bytes("caf\u00e9".encode("latin-1"))
+    (project / "code.txt").write_text("before\n")
+    fake_model["script"] = [("read_file", {"path": "notes.txt"}),
+                            ("write_file", {"path": "code.txt", "content": "after\n"}),
+                            ("finish", {"summary": "Propose a text fix"})]
+    out = tmp_path / "proposal"
+    manifest = propose(project, out, task="Fix code", model_file=model_file)
+    assert manifest["skipped_paths"] == ["notes.txt"]
+    assert "Skipped path is unavailable" in fake_model["calls"][1]["messages"][-1]["content"]
+    assert "caf" not in json.dumps(fake_model["calls"])
+    assert "+after" in (out / "proposal.diff").read_text()
+    apply_proposal(out)
+    assert (project / "notes.txt").read_bytes() == b"caf\xe9"
+
+
 def test_private_proposal_permissions_and_original_mode(tmp_path, fake_model, model_file):
     project = tmp_path / "project"
     project.mkdir()
