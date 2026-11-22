@@ -9,7 +9,7 @@ import pytest
 from autofix.agent import Agent, parse_json_calls
 from autofix.events import command_context
 from autofix.gitops import git
-from autofix.providers import TINKER_BASE_URL, model_config
+from autofix.providers import KEYSHIELD_BASE_URL, TINKER_BASE_URL, model_config
 from autofix.review import findings, review
 from autofix.runner import isolated_run, run, templates
 from autofix.swarm import SwarmFailure, swarm
@@ -25,6 +25,31 @@ def test_tinker_defaults_and_overrides():
     assert model_config({**cfg, "base_url": "http://local", "tool_mode": "json"})["base_url"] == "http://local"
     with pytest.raises(ValueError):
         model_config({"tool_mode": "invalid"})
+
+
+def test_keyshield_defaults(monkeypatch):
+    monkeypatch.delenv("KS_BASE", raising=False)
+    cfg = model_config({"provider": "keyshield", "model": "thinkingmachines/Inkling:peft:262144"})
+    assert cfg["base_url"] == f"{KEYSHIELD_BASE_URL}/vproxy/tinker"
+    assert cfg["api_key_env"] == "KS_TOKEN"
+    monkeypatch.setenv("KS_BASE", "http://127.0.0.1:8787/")
+    assert model_config({"provider": "keyshield", "keyshield_upstream": "openai", "model": "m"})[
+        "base_url"] == "http://127.0.0.1:8787/vproxy/openai/v1"
+    with pytest.raises(ValueError, match="keyshield_path"):
+        model_config({"provider": "keyshield", "keyshield_upstream": "custom", "model": "m"})
+    with pytest.raises(ValueError, match="keyshield_base"):
+        model_config({"provider": "keyshield", "base_url": "http://x", "model": "m"})
+
+
+def test_keyshield_run_uses_vproxy_and_session_token(repo, fake_model, monkeypatch, tmp_path):
+    monkeypatch.setenv("KS_TOKEN", "ks-proxy-token")
+    monkeypatch.delenv("TINKER_API_KEY", raising=False)
+    base = fake_model["model"].pop("base_url").removesuffix("/v1")
+    fake_model["model"].update(provider="keyshield", keyshield_base=base)
+    fake_model["script"] = [("finish", {"summary": "Nothing to change"})]
+    run(config(repo, fake_model), "custom", "demo", {"task": "Inspect"}, True, tmp_path / "logs")
+    assert fake_model["path"] == "/vproxy/tinker/chat/completions"
+    assert fake_model["authorization"] == "Bearer ks-proxy-token"
 
 
 def test_json_tool_loop(repo, fake_model, monkeypatch, tmp_path):

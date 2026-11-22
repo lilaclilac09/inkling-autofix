@@ -41,6 +41,7 @@ def fake_model():
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state["calls"].append(request)
             state["authorization"] = self.headers.get("Authorization")
+            state["path"] = self.path
             tool = state["handler"](request) if "handler" in state else state["script"].pop(0)
             message = {"role": "assistant", "content": "No tools"}
             if isinstance(tool, str):
