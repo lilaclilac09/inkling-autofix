@@ -8,14 +8,16 @@ from pathlib import Path
 from openai import OpenAI
 
 from .providers import model_config
+from .environment import command_env
 
 
 LIMIT = 16000
 
 
-def command(root, command, timeout=120, separate_output=False):
+def command(root, command, timeout=120, separate_output=False, api_key_env=None):
     process = subprocess.Popen(command, cwd=root, shell=True, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, start_new_session=True)
+                               stderr=subprocess.PIPE, text=True, start_new_session=True,
+                               env=command_env(api_key_env))
     try:
         stdout, stderr = process.communicate(timeout=min(max(int(timeout), 1), 600))
         result = {"returncode": process.returncode, "output": (stdout + stderr)[-LIMIT:]}
@@ -49,7 +51,8 @@ class Agent:
         if self.read_only and name not in {"list_files", "read_file"}:
             raise ValueError("Review tools are read-only")
         if name == "run_command":
-            return command(self.root, args["command"], args.get("timeout", 120))
+            return command(self.root, args["command"], args.get("timeout", 120),
+                           api_key_env=self.model["api_key_env"])
         path = self.path(args.get("path", "."))
         if name == "list_files":
             return sorted(str(p.relative_to(self.root)) for p in path.iterdir()

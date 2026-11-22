@@ -26,6 +26,102 @@ autofix daemon
 
 Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. Native mode requires `tools`/`tool_calls`; unsupported models fail with a clear error. Explicitly select `tool_mode: json` for the plain-text protocol described below.
 
+## Mac app (no Terminal)
+
+Download and unzip `Inkling-Autofix-mac.zip`, then move **Inkling Autofix.app** to
+Applications or another writable folder. This app is unsigned: on the first launch,
+right-click it, choose **Open**, and confirm. If needed, use **System Settings > Privacy
+& Security > Open Anyway** after trying to open it. Do not disable Gatekeeper globally.
+
+Install **Python 3.10+** using the graphical installer at
+[python.org](https://www.python.org/downloads/macos/) first. Git must be available too;
+macOS may offer to install Apple's Command Line Tools. No Terminal commands are required
+for the app's normal workflow. First launch needs Internet access to create a private
+virtual environment and install the bundled package plus pytest. Future launches reuse it;
+a changed bundled source hash triggers setup again.
+
+1. Double-click the app and enter your Tinker API key in the hidden-answer dialog. It is
+   stored in your login Keychain under service **Inkling Autofix**, account **tinker**.
+2. Choose **Fix something in a folder** or **Fix something in a single file**, select the
+   target, and choose **Describe the bug** or **Fix failing tests**.
+3. Wait for the proposal. The diff opens in TextEdit; the approval dialog shows the summary
+   and changed files. Inspect the diff, then choose **Apply changes** or **Cancel**.
+4. Only explicit approval invokes apply. Stale originals are refused. Out-of-scope proposals
+   offer **Choose a larger folder** without applying anything. Errors offer to open the log.
+
+**Settings** changes the model ID/checkpoint, selects native or JSON tools, and resets the
+API key. Default: `thinkingmachines/Inkling:peft:262144`, Tinker, native tools. The app does
+not commit, push, or publish. Project dependencies/test tools must already be available;
+tests and agent commands still run with your user privileges, not in an OS sandbox.
+
+Local data lives in `~/Library/Application Support/Inkling Autofix/`: `model.yaml`, `venv/`,
+`proposals/`, and `logs/launcher.log`. The key is never written there or logged; only the
+autofix proposal process receives it in its environment. To remove the credential without
+launching the app, open **Keychain Access**, search **Inkling Autofix**, and delete the
+generic-password item with account **tinker**. Deleting the app does not remove that item.
+You can separately delete the Application Support folder to remove local data.
+
+For developers, `bash macos/build_app.sh` builds the unsigned bundle on Linux or macOS:
+`dist/Inkling Autofix.app` and `dist/Inkling-Autofix-mac.zip`, including `READ ME FIRST.txt`.
+The archive preserves executable bits and symlinks. No Python runtime is bundled.
+
+## Propose, review, then apply locally
+
+These commands do not require `config.yaml`. They never commit to your project, create a
+branch there, push, or publish. Select a folder or one file, inspect the proposal, and run
+`apply` only after explicitly approving it:
+
+```sh
+export TINKER_API_KEY='your-api-key'
+autofix propose --path /Users/me/project --task "Fix the empty-input crash" --out /Users/me/proposals/fix-1
+# Or fix failing tests (the command must pass before a proposal is produced):
+autofix propose --path /Users/me/project --fix-tests --test-command 'python3 -m pytest -q' --out /Users/me/proposals/fix-tests
+# A single-file selection allows edits only to that file:
+autofix propose --path /Users/me/project/src/parser.py --task "Handle empty input" --out /Users/me/proposals/parser
+
+# Inspect proposal.diff and summary.txt. Only after approval:
+autofix apply --proposal /Users/me/proposals/fix-1
+```
+
+Optional `--model-config /Users/me/model.yaml` accepts the model settings directly, without
+a `model:` wrapper. For example:
+
+```yaml
+provider: tinker
+model: thinkingmachines/Inkling:peft:262144
+api_key_env: TINKER_API_KEY
+tool_mode: native
+max_steps: 40
+```
+
+Without that file, these Tinker settings are the defaults. You can override `base_url`,
+choose another supported provider, or select `tool_mode: json`. Export the named key;
+never store it in the YAML file. `--fix-tests` defaults to `python -m pytest -q`.
+
+The workspace root is the enclosing Git toplevel, or the selected folder/file's parent
+when there is no Git repository. A fresh temporary copy supplies context while limiting
+the applicable changes to your selected folder or file. The copy omits `.git`, virtual
+environments, dependency/cache folders, and symlinks. Git is initialized and a baseline
+commit is made **only in that disposable copy**; no local Git identity is needed.
+Commands/dependencies must already be available; skipped virtual environments are not
+copied. Symlink edits and non-regular files are unsupported.
+
+Use a new or empty output directory for each proposal. It contains `proposal.diff`,
+`summary.txt`, `manifest.json`, and binary-safe new contents under `contents/`. An empty
+proposal is valid. Out-of-scope edits exit **3**, list the offending files, and produce no
+applicable manifest. A failed test/check or other error exits 1. Apply validates every
+path, scope, original SHA-256, and payload before writing anything; stale or newly
+conflicting files cause refusal with their names. Individual file replacements are atomic,
+but applying several files is not a filesystem transaction. Only apply trusted proposals:
+the manifest records its destination root and must not be edited to redirect it.
+
+All command subprocesses strip the configured model-key variable, `TINKER_API_KEY`,
+`INKLING_API_KEY`, `OPENAI_API_KEY`, and names matching `AUTOFIX_*KEY*`. This also covers
+existing run, daemon, swarm, checks, adapters, and notifier paths; the model client retains
+its key. **This is not an OS sandbox**: shell commands run with your user privileges,
+and environment filtering does not prevent reading secrets stored in files or other
+host resources. Use trusted projects and an isolated account/container for untrusted code.
+
 ## Using the Tinker API
 
 Tinker has an [OpenAI-compatible inference API](https://tinker-docs.thinkingmachines.ai/inference/openai/overview/).

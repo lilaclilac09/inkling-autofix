@@ -6,6 +6,7 @@ from pathlib import Path
 from .runner import DATA, daemon, load_config, run, templates
 from .swarm import swarm
 from .review import review
+from .proposals import ScopeError, apply_proposal, propose
 
 
 def main():
@@ -31,9 +32,27 @@ def main():
     target.add_argument("--branch")
     target.add_argument("--pr", type=int)
     inspect.add_argument("--agents", type=int)
+    proposal = commands.add_parser("propose")
+    proposal.add_argument("--path", type=Path, required=True)
+    request = proposal.add_mutually_exclusive_group(required=True)
+    request.add_argument("--task")
+    request.add_argument("--fix-tests", action="store_true")
+    proposal.add_argument("--test-command")
+    proposal.add_argument("--out", type=Path, required=True)
+    proposal.add_argument("--model-config", type=Path)
+    apply = commands.add_parser("apply")
+    apply.add_argument("--proposal", type=Path, required=True)
     args = parser.parse_args()
     try:
-        if args.action == "init":
+        if args.action == "propose":
+            if args.test_command and not args.fix_tests:
+                parser.error("--test-command requires --fix-tests")
+            manifest = propose(args.path, args.out, args.task, args.fix_tests,
+                               args.test_command, args.model_config)
+            print(json.dumps({"proposal": str(args.out.resolve()), "files": len(manifest["files"])}, indent=2))
+        elif args.action == "apply":
+            print(json.dumps(apply_proposal(args.proposal), indent=2))
+        elif args.action == "init":
             with args.config.open("x") as stream:
                 stream.write((DATA / "config.example.yaml").read_text())
             print(f"Created {args.config}")
@@ -73,6 +92,9 @@ def main():
                                      args.dry_run, logs), ensure_ascii=False, indent=2))
     except KeyboardInterrupt:
         return
+    except ScopeError as exc:
+        print(f"autofix: {exc}", file=sys.stderr)
+        sys.exit(3)
     except Exception as exc:
         print(f"autofix: {exc}", file=sys.stderr)
         sys.exit(1)

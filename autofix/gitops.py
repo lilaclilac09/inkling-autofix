@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .agent import command
+from .environment import command_env
 
 
 def git(root, *args):
     return subprocess.run(["git", *args], cwd=root, check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, env=command_env()).stdout.strip()
 
 
 def prepare(root, template, base):
@@ -64,5 +65,5 @@ def complete(root, branch, base, summary, check, github, dry_run, review_callbac
         pr = subprocess.run(["gh", "pr", "create", "--repo", github, "--base", base,
                              "--head", branch, "--title", "autofix: " + summary.splitlines()[0][:100],
                              "--body", summary], cwd=root, check=True,
-                            capture_output=True, text=True).stdout.strip()
+                            capture_output=True, text=True, env=command_env()).stdout.strip()
     return {"changed": True, "check": result, "pr": pr, "review": review}
