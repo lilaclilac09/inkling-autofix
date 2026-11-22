@@ -110,7 +110,7 @@ setup || exit 1
     assert not list(data.glob("setup-source.*"))
 
 
-@pytest.mark.parametrize("scenario", ["apply", "cancel", "stale", "scope", "failure", "settings", "tests"])
+@pytest.mark.parametrize("scenario", ["apply", "cancel", "stale", "scope", "failure", "settings", "tests", "quoted-key"])
 def test_launcher_folder_flow_with_native_tools_stubbed(bundle, tmp_path, fake_model, scenario):
     home = tmp_path / "home with spaces"
     data = home / "Library" / "Application Support" / "Inkling Autofix"
@@ -136,9 +136,12 @@ def test_launcher_folder_flow_with_native_tools_stubbed(bundle, tmp_path, fake_m
     bins = tmp_path / "stub tools"
     bins.mkdir()
     events = state / "events.jsonl"
+    test_key = 'launcher-test-key' + (r' "quoted" \ tail; $(ignored)' if scenario == "quoted-key" else "")
     common = '''import json, os, sys
 from pathlib import Path
 state = Path(os.environ["STUB_STATE"])
+key = "launcher-" + "test-key"
+if os.environ["STUB_SCENARIO"] == "quoted-key": key += r' "quoted" \\ tail; $(ignored)'
 def record(kind, **fields):
     with (state / "events.jsonl").open("a") as stream:
         stream.write(json.dumps({"kind": kind, **fields}) + "\\n")
@@ -152,15 +155,18 @@ os.execv(sys.executable, [sys.executable, *args])
 ''')
     shutil.copy2(data / "venv" / "bin" / "python", data / "venv" / "bin" / "python3")
     executable(bins / "security", common + '''
+import shlex
 assert "TINKER_API_KEY" not in os.environ
-operation = sys.argv[1]
-record("security", operation=operation)
-assert "Inkling Autofix" in sys.argv and "tinker" in sys.argv
+assert key not in " ".join(sys.argv)
+args = shlex.split(sys.stdin.read()) if sys.argv[1:] == ["-i"] else sys.argv[1:]
+operation = args[0]
+record("security", operation=operation, args=sys.argv[1:])
+assert "Inkling Autofix" in args and "tinker" in args
 if operation == "find-generic-password":
     if not (state / "credential").exists(): sys.exit(44)
-    print("launcher-test-key")
+    print(key)
 elif operation == "add-generic-password":
-    assert sys.argv[-1] == "launcher-test-key"
+    assert sys.argv[1:] == ["-i"] and args[-1] == key
     (state / "credential").touch()
 elif operation == "delete-generic-password":
     (state / "credential").unlink(missing_ok=True)
@@ -185,7 +191,7 @@ def count(name):
 if "display notification" in script:
     pass
 elif "Enter your Tinker API key:" in script:
-    print("launcher-test-key")
+    print(key)
 elif "What would you like to do?" in script:
     n = count("main")
     print("Settings" if scenario == "settings" and n == 0 else "Fix something in a folder" if n < 2 else "Quit")
@@ -255,11 +261,11 @@ else:
     assert not (tmp_path / "SHOULD_NOT_EXIST").exists()
     assert git(project, "rev-parse", "HEAD") == head
     assert git(project, "branch", "--show-current") == "main"
-    assert fake_model["authorization"] == "Bearer launcher-test-key"
-    assert all("launcher-test-key" not in str(args) for args in calls)
+    assert fake_model["authorization"] == "Bearer " + test_key
+    assert all(test_key not in str(args) for args in calls)
     for path in data.rglob("*"):
         if path.is_file():
-            assert b"launcher-test-key" not in path.read_bytes(), str(path)
+            assert test_key.encode() not in path.read_bytes(), str(path)
     if scenario in {"failure", "stale"}:
         assert any(entry["kind"] == "open" and entry["args"][-1].endswith("launcher.log") for entry in recorded)
     else:

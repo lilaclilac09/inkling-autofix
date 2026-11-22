@@ -99,8 +99,8 @@ PY
 
 get_api_key() {
     # KeyShield or another credential provider can replace this function later.
-    local key
-    export -n key
+    local key quoted
+    export -n key quoted
     if [ "${1:-}" = "reset" ]; then
         security delete-generic-password -s "Inkling Autofix" -a tinker >/dev/null 2>&1 || true
     elif key=$(security find-generic-password -s "Inkling Autofix" -a tinker -w 2>/dev/null) && [ -n "$key" ]; then
@@ -113,7 +113,10 @@ text returned of (display dialog "Enter your Tinker API key:" with title "Inklin
 APPLESCRIPT
     ) || return 1
     if [ -z "$key" ]; then message "The API key cannot be empty." >/dev/null; return 1; fi
-    if ! security add-generic-password -U -s "Inkling Autofix" -a tinker -w "$key" >/dev/null 2>&1; then
+    case "$key" in *[![:print:]]*) message "The API key must not contain control characters." >/dev/null; return 1 ;; esac
+    quoted=${key//\\/\\\\}
+    quoted=${quoted//\"/\\\"}
+    if ! printf 'add-generic-password -U -s "Inkling Autofix" -a tinker -w "%s"\n' "$quoted" | security -i >/dev/null 2>&1; then
         message "Could not save the API key in your login Keychain." >/dev/null
         return 1
     fi
