@@ -80,10 +80,9 @@ model:
   max_steps: 40
 ```
 
-Export `KS_TOKEN` (the proxy-only token) before running. Requests go to
-`https://keyshield-production.up.railway.app/vproxy/tinker/chat/completions` with
-`Authorization: Bearer <KS_TOKEN>`, and KeyShield adds the Tinker key for that one request.
-Set `keyshield_base` (or export `KS_BASE`) for another KeyShield deployment. For a key stored in
+Export `KS_TOKEN` (the proxy-only token) and `KS_BASE` (your KeyShield API URL, or set
+`keyshield_base`) before running. Requests go to `$KS_BASE/vproxy/tinker/chat/completions` with
+`Authorization: Bearer <KS_TOKEN>`, and KeyShield adds the Tinker key for that one request. For a key stored in
 zero-knowledge mode, run `keyshield-proxy run` and set `keyshield_base: http://127.0.0.1:8787`
 with the local token it prints as `KS_TOKEN`. `keyshield_upstream` also accepts `openai`,
 `openrouter`, `groq` and `mistral`; for other upstreams set `keyshield_path` to the path from

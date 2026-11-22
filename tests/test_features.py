@@ -9,7 +9,7 @@ import pytest
 from autofix.agent import Agent, parse_json_calls
 from autofix.events import command_context
 from autofix.gitops import git
-from autofix.providers import KEYSHIELD_BASE_URL, TINKER_BASE_URL, model_config
+from autofix.providers import TINKER_BASE_URL, model_config
 from autofix.review import findings, review
 from autofix.runner import isolated_run, run, templates
 from autofix.swarm import SwarmFailure, swarm
@@ -29,8 +29,11 @@ def test_tinker_defaults_and_overrides():
 
 def test_keyshield_defaults(monkeypatch):
     monkeypatch.delenv("KS_BASE", raising=False)
-    cfg = model_config({"provider": "keyshield", "model": "thinkingmachines/Inkling:peft:262144"})
-    assert cfg["base_url"] == f"{KEYSHIELD_BASE_URL}/vproxy/tinker"
+    with pytest.raises(ValueError, match="KS_BASE"):
+        model_config({"provider": "keyshield", "model": "m"})
+    cfg = model_config({"provider": "keyshield", "keyshield_base": "https://ks.example/",
+                        "model": "thinkingmachines/Inkling:peft:262144"})
+    assert cfg["base_url"] == "https://ks.example/vproxy/tinker"
     assert cfg["api_key_env"] == "KS_TOKEN"
     monkeypatch.setenv("KS_BASE", "http://127.0.0.1:8787/")
     assert model_config({"provider": "keyshield", "keyshield_upstream": "openai", "model": "m"})[

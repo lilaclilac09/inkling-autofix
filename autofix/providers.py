@@ -1,7 +1,6 @@
 import os
 
 TINKER_BASE_URL = "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1"
-KEYSHIELD_BASE_URL = "https://keyshield-production.up.railway.app"
 # Path from KeyShield's /vproxy/<upstream> to each upstream's OpenAI-compatible root.
 KEYSHIELD_UPSTREAM_PATHS = {
     "tinker": "",
@@ -17,7 +16,9 @@ def keyshield_base_url(model):
     path = model.get("keyshield_path", KEYSHIELD_UPSTREAM_PATHS.get(upstream))
     if path is None:
         raise ValueError(f"Set keyshield_path for KeyShield upstream: {upstream}")
-    base = model.get("keyshield_base") or os.environ.get("KS_BASE") or KEYSHIELD_BASE_URL
+    base = model.get("keyshield_base") or os.environ.get("KS_BASE")
+    if not base:
+        raise ValueError("Set keyshield_base or KS_BASE to your KeyShield API URL")
     return f"{base.rstrip('/')}/vproxy/{upstream}{path}"
 
 
