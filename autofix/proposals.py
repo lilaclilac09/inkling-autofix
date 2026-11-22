@@ -35,6 +35,20 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def private_directory(path):
+    if not path.parent.exists():
+        private_directory(path.parent)
+    path.mkdir(mode=0o700, exist_ok=True)
+    path.chmod(0o700)
+
+
+def private_file(path, data):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        stream.write(data)
+
+
 def relative_path(value, allow_root=False):
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Invalid relative path")
@@ -271,9 +285,11 @@ def propose(path, out, task=None, fix_tests=False, test_command=None, model_file
                 tofile=f"b/{name}" if new else "/dev/null")
             diff += "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
                             for line in lines)
-        output.mkdir(parents=True, exist_ok=True)
+        private_directory(output)
+        if supplied_output and supplied_output.parent == output:
+            supplied_output.chmod(0o600)
         contents = output / "contents"
-        contents.mkdir()
+        private_directory(contents)
         entries = []
         for index, name in enumerate(changed):
             old, new = original.get(name), updated.get(name)
@@ -281,14 +297,14 @@ def propose(path, out, task=None, fix_tests=False, test_command=None, model_file
                      "original_sha256": old["sha256"] if old else None}
             if new is not None:
                 payload = f"contents/{index}"
-                (output / payload).write_bytes((workspace / name).read_bytes())
+                private_file(output / payload, (workspace / name).read_bytes())
                 entry.update(contents=payload, new_sha256=new["sha256"], mode=new["mode"])
             entries.append(entry)
-        (output / "proposal.diff").write_text(diff)
-        (output / "summary.txt").write_text(summary + "\n")
+        private_file(output / "proposal.diff", diff.encode("utf-8"))
+        private_file(output / "summary.txt", (summary + "\n").encode("utf-8"))
         manifest = {"version": 1, "root": str(root), "scope": scope, "files": entries,
                     "skipped_paths": sorted(skipped), "validation": VALIDATION}
-        (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        private_file(output / "manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
         return manifest
 
 
@@ -323,6 +339,8 @@ def apply_proposal(proposal):
             mode = entry["mode"]
             if (digest(data) != entry["new_sha256"] or type(mode) is not int or not 0 <= mode <= 0o777):
                 raise ValueError(f"Corrupt proposal contents or mode: {name}")
+            if action == "modify" and destination.is_file():
+                mode = stat.S_IMODE(destination.stat().st_mode) & 0o777
         plans.append((destination, data, mode))
     if stale:
         raise ValueError("Original files changed since proposal; nothing applied:\n" + "\n".join(stale))

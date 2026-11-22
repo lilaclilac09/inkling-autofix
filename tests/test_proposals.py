@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import stat
 
 import pytest
 import yaml
@@ -71,6 +72,29 @@ def test_empty_proposal(tmp_path, fake_model, model_file):
     assert (out / "proposal.diff").read_text() == ""
     assert apply_proposal(out)["applied"] == 0
     assert list(project.iterdir()) == []
+
+
+def test_private_proposal_permissions_and_original_mode(tmp_path, fake_model, model_file):
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "code.txt"
+    target.write_text("original")
+    target.chmod(0o640)
+    fake_model["script"] = [("write_file", {"path": "code.txt", "content": "fixed"}),
+                            ("finish", {"summary": "Fix"})]
+    out = tmp_path / "new-parent/proposal"
+    previous = os.umask(0)
+    try:
+        manifest = propose(project, out, task="Fix", model_file=model_file)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o700
+    for path in out.rglob("*"):
+        assert stat.S_IMODE(path.stat().st_mode) == (0o700 if path.is_dir() else 0o600)
+    manifest["files"][0]["mode"] = 0o777
+    (out / "manifest.json").write_text(json.dumps(manifest))
+    apply_proposal(out)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
 
 def test_temporary_workspace_inside_source_via_symlink_is_not_recopied(tmp_path, fake_model, model_file, monkeypatch):
