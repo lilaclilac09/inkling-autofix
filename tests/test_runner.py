@@ -161,6 +161,11 @@ def test_github_contexts(repo, fake_model, monkeypatch, tmp_path, template, empt
         if args[:2] == ("run", "list"):
             return json.dumps([] if empty else [{"databaseId": 42, "headBranch": "main",
                                                  "headSha": git(repo, "rev-parse", "main")}])
+        if args == ("api", "repos/owner/repo/actions/runs/42"):
+            return json.dumps({"head_repository": {"full_name": "owner/repo"}, "head_branch": "main",
+                               "head_sha": git(repo, "rev-parse", "main")})
+        if args == ("api", "repos/owner/repo/branches/main"):
+            return json.dumps({"commit": {"sha": git(repo, "rev-parse", "main")}})
         assert args[:3] == ("run", "view", "42")
         assert "--log-failed" in args
         return "CI assertion failed"

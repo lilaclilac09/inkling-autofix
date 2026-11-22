@@ -4,6 +4,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 
@@ -34,6 +35,30 @@ def load_config(path):
 def gh(root, *args):
     return subprocess.run(["gh", *args], cwd=root, check=True,
                           capture_output=True, text=True, timeout=120).stdout
+
+
+def same_repo_ci_source(root, github, run):
+    try:
+        detail = json.loads(gh(root, "api", f"repos/{github}/actions/runs/{run['databaseId']}"))
+        source = detail.get("head_repository") or {}
+        if (source.get("full_name", "").casefold() != github.casefold()
+                or detail.get("head_sha") != run.get("headSha")
+                or detail.get("head_branch") != run.get("headBranch")):
+            return False
+        branch = quote(run["headBranch"], safe="")
+        head = json.loads(gh(root, "api", f"repos/{github}/branches/{branch}"))["commit"]["sha"]
+        if head == run["headSha"]:
+            return True
+        comparison = json.loads(gh(root, "api", f"repos/{github}/compare/{run['headSha']}...{head}"))
+        return comparison.get("status") in {"ahead", "identical"}
+    except subprocess.CalledProcessError:
+        return False
+
+
+def same_repo_pr(pr, github):
+    source = pr.get("headRepository") or {}
+    return (not pr.get("isCrossRepository", True)
+            and source.get("nameWithOwner", "").casefold() == github.casefold())
 
 
 def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
@@ -104,22 +129,31 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
                              "--json", fields))
         if trigger == "github_ci":
             prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
-                                "--limit", "200", "--json", "number,headRefName,author,isCrossRepository"))
+                                "--limit", "200", "--json", "number,headRefName,author,isCrossRepository,headRepository"))
             allowed = {p["headRefName"] for p in prs
-                       if not p["headRefName"].startswith("autofix/")
+                       if same_repo_pr(p, repo["github"])
+                       and not p["headRefName"].startswith("autofix/")
                        and not p["author"].get("is_bot", False)}
-            runs = [r for r in runs if r["headBranch"] in allowed][:1]
-        if runs:
-            failed = runs[0]
-            start_ref = failed["headSha"]
+            runs = [r for r in runs if r["headBranch"] in allowed]
+        selected = []
+        for failed in runs:
+            if not same_repo_ci_source(root, repo["github"], failed):
+                continue
             if failed["headBranch"] != repo["base_branch"]:
                 if trigger != "github_ci":
                     prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
-                                        "--head", failed["headBranch"], "--json", "number,headRefName,isCrossRepository"))
-                source_prs = [p for p in prs if p["headRefName"] == failed["headBranch"]]
-                if not source_prs or any(p.get("isCrossRepository", False) for p in source_prs):
-                    raise ValueError("CI repair requires a same-repository source PR for a non-base branch")
+                                        "--head", failed["headBranch"], "--limit", "200", "--json",
+                                        "number,headRefName,isCrossRepository,headRepository"))
+                source_prs = [p for p in prs if p["headRefName"] == failed["headBranch"]
+                              and same_repo_pr(p, repo["github"])]
+                if not source_prs:
+                    continue
                 publish_base = failed["headBranch"]
+            start_ref = failed["headSha"]
+            selected = [failed]
+            break
+        runs = selected
+        if runs:
             exists = subprocess.run(["git", "cat-file", "-e", f"{start_ref}^{{commit}}"],
                                     cwd=root, capture_output=True)
             if exists.returncode:

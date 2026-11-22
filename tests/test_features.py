@@ -256,7 +256,8 @@ def test_ci_poll_excludes_automation_prs(repo, fake_model, monkeypatch, tmp_path
         if args[:2] == ("run", "list"):
             return json.dumps([{"databaseId": 1, "headBranch": "autofix/fix"}])
         assert args[:2] == ("pr", "list")
-        return json.dumps([{"number": 1, "headRefName": "autofix/fix", "author": {"login": "human"}}])
+        return json.dumps([{"number": 1, "headRefName": "autofix/fix", "author": {"login": "human"},
+                            "isCrossRepository": False, "headRepository": {"nameWithOwner": "owner/repo"}}])
 
     monkeypatch.setattr(runner, "gh", fake_gh)
     assert run(cfg, "auto-fix-ci", "demo", dry_run=True, log_dir=tmp_path / "logs") == []
