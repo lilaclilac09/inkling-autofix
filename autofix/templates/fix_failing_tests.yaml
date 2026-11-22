@@ -1,4 +1,5 @@
 name: fix_failing_tests
+category: Core
 description: Fix failing tests
 trigger:
   type: schedule

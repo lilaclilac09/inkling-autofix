@@ -1,4 +1,5 @@
 name: custom
+category: Core
 description: Run a free-form task
 trigger:
   type: manual

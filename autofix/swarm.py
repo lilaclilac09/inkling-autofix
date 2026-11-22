@@ -101,7 +101,8 @@ def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
                     abort = subprocess.run(["git", "merge", "--abort"], cwd=integration,
                                            capture_output=True, text=True)
                     result["skipped"].append({"branch": candidate, "error": str(exc)})
-                    if abort.returncode or git(integration, "rev-parse", "HEAD") != prior:
+                    if (abort.returncode or git(integration, "rev-parse", "HEAD") != prior
+                            or git(integration, "status", "--porcelain")):
                         result["error"] = "Could not safely restore integration; manual inspection required"
                         return result
                 finally:

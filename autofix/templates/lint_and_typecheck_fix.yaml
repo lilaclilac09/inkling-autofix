@@ -1,4 +1,5 @@
 name: lint_and_typecheck_fix
+category: Core
 description: Fix lint and type-check errors
 trigger:
   type: schedule

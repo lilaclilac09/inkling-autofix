@@ -38,10 +38,14 @@ def fake_model():
             pass
 
         def do_POST(self):
-            state["calls"].append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            tool = state["script"].pop(0)
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            state["calls"].append(request)
+            state["authorization"] = self.headers.get("Authorization")
+            tool = state["handler"](request) if "handler" in state else state["script"].pop(0)
             message = {"role": "assistant", "content": "No tools"}
-            if tool:
+            if isinstance(tool, str):
+                message = {"role": "assistant", "content": tool}
+            elif tool:
                 name, args = tool
                 message = {"role": "assistant", "content": None, "tool_calls": [
                     {"id": f"call_{len(state['calls'])}", "type": "function",
@@ -207,7 +211,7 @@ def test_logs_inside_repo_do_not_dirty_next_run(repo, fake_model, monkeypatch):
 def test_daemon_schedule_and_error_logging(monkeypatch, tmp_path):
     clock = [0]
     invocations = []
-    cfg = {"automations": [{"name": "job", "template": "custom", "repo": "demo",
+    cfg = {"repos": [], "automations": [{"name": "job", "template": "custom", "repo": "demo",
                            "schedule_minutes": 1, "enabled": True, "task": "fix"},
                           {"name": "off", "enabled": False}]}
 
@@ -220,7 +224,7 @@ def test_daemon_schedule_and_error_logging(monkeypatch, tmp_path):
         if clock[0] > 60:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "isolated_run", fake_run)
     monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(runner.time, "sleep", advance)
     with pytest.raises(KeyboardInterrupt):

@@ -36,7 +36,7 @@ def findings(summary):
 def review_tree(config, root, diff, log_dir, roles=None):
     settings = config.get("review", {})
     roles = roles if roles is not None else settings.get("roles", DEFAULT_ROLES)
-    if not roles or not all(isinstance(role, str) and role.strip() for role in roles):
+    if not isinstance(roles, list) or not roles or not all(isinstance(role, str) and role.strip() for role in roles):
         raise ValueError("review.roles must be a nonempty list of role names")
     model = model_config(config["model"])
     key = os.environ.get(model["api_key_env"])
@@ -91,6 +91,8 @@ def review(config, repo_name, branch=None, pr=None, agents=None, log_dir=Path("l
     root = Path(repo["path"]).resolve()
     log_dir = safe_log_dir(config, log_dir)
     roles = config.get("review", {}).get("roles", DEFAULT_ROLES)
+    if not isinstance(roles, list) or not roles:
+        raise ValueError("review.roles must be a nonempty list of role names")
     if agents is not None:
         if agents < 1:
             raise ValueError("--agents must be positive")

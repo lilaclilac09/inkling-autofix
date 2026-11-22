@@ -96,8 +96,18 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         if not repo.get("github"):
             raise ValueError("fix_ci_failure requires repo.github and gh")
         filters = ["--branch", repo["base_branch"]] if trigger != "github_ci" else ["--event", "pull_request"]
+        fields = "databaseId,headBranch" if trigger == "github_ci" else "databaseId"
         runs = json.loads(gh(root, "run", "list", "--repo", repo["github"], *filters,
-                             "--status", "failure", "--limit", "1", "--json", "databaseId"))
+                             "--status", "failure", "--limit", "20" if trigger == "github_ci" else "1",
+                             "--json", fields))
+        if trigger == "github_ci":
+            prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
+                                "--limit", "200", "--json", "number,headRefName,author"))
+            allowed = {p["headRefName"] for p in prs
+                       if not p["headRefName"].startswith(("autofix/", "devin/"))
+                       and "devin" not in p["author"]["login"].lower()
+                       and not p["author"].get("is_bot", False)}
+            runs = [r for r in runs if r["headBranch"] in allowed][:1]
         contexts = [(None, gh(root, "run", "view", str(runs[0]["databaseId"]),
                               "--repo", repo["github"], "--log-failed")[-30000:])] if runs else []
     elif trigger == "github_push":
@@ -124,7 +134,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             record["branch"] = branch
             summary = agent.run(prompt)
             if template.get("output_only"):
-                reports = root / "reports"
+                reports = agent.path("reports")
                 reports.mkdir(exist_ok=True)
                 (reports / f"{branch.rsplit('/', 1)[-1]}.md").write_text(summary + "\n")
             outcome = complete(root, branch, repo["base_branch"], summary, check,

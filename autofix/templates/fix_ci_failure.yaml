@@ -1,4 +1,5 @@
 name: fix_ci_failure
+category: Core
 description: Read the latest failed CI logs and fix the failure
 trigger:
   type: schedule

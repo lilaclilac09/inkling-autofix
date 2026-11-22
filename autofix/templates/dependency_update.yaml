@@ -1,4 +1,5 @@
 name: dependency_update
+category: Core
 description: Update outdated dependencies in small steps while keeping tests green
 trigger:
   type: schedule

@@ -24,7 +24,7 @@ autofix daemon
 
 `--dry-run` **still edits files, runs commands, and creates branches and local commits**; it only skips push/PR creation and issue comments. Commands run in the target repository; interpreters, test tools, and dependencies must already be available. For non-Python projects, change `test_command` to something like `npm test`.
 
-Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. The model must support `tools`/`tool_calls`; unsupported models fail with a clear error instead of falling back to parsing chat text.
+Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. Native mode requires `tools`/`tool_calls`; unsupported models fail with a clear error. Explicitly select `tool_mode: json` for the plain-text protocol described below.
 
 ## Using the Tinker API
 
@@ -211,6 +211,6 @@ pytest -q
 autofix templates
 ```
 
-Tests use a stdlib HTTP fake model server to repair genuinely failing tests in a temporary Git repository and verify branches, commits, checks, and error boundaries. No real API key is needed. Verify the actual Inkling endpoint, GitHub push/PR workflow, and launchd in your own environment.
+Tests use a stdlib HTTP fake model server to repair genuinely failing tests in a temporary Git repository and verify branches, commits, checks, and error boundaries. They also cover the JSON tool protocol, Tinker defaults and bearer authentication, the complete catalog, command events, locks and daemon worktrees, intentional swarm conflicts (resolved and skipped), read-only review aggregation, and blocking publication gates. No real API key is needed. Verify the actual Inkling endpoint, GitHub push/PR workflow, and launchd in your own environment.
 
 In short: A minimal self-hosted tool-calling repair runner. Use an isolated clone, configure an OpenAI-compatible endpoint, and review generated branches and PRs. Shell access is **not sandboxed**.

@@ -1,4 +1,5 @@
 name: fix_github_issues
+category: Core
 description: Fix GitHub issues labeled bug one at a time
 trigger:
   type: schedule
