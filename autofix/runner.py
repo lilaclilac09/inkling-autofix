@@ -70,6 +70,8 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         raise ValueError("custom requires --task or automation task")
     log_dir.mkdir(parents=True, exist_ok=True)
     trigger = template.get("trigger", {}).get("type", "manual")
+    start_ref = repo["base_branch"]
+    publish_base = repo["base_branch"]
     if trigger == "command":
         contexts = command_context(root, template, params)
     elif template_name == "fix_github_issues" or trigger == "github_issues":
@@ -96,18 +98,35 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         if not repo.get("github"):
             raise ValueError("fix_ci_failure requires repo.github and gh")
         filters = ["--branch", repo["base_branch"]] if trigger != "github_ci" else ["--event", "pull_request"]
-        fields = "databaseId,headBranch" if trigger == "github_ci" else "databaseId"
+        fields = "databaseId,headBranch,headSha"
         runs = json.loads(gh(root, "run", "list", "--repo", repo["github"], *filters,
                              "--status", "failure", "--limit", "20" if trigger == "github_ci" else "1",
                              "--json", fields))
         if trigger == "github_ci":
             prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
-                                "--limit", "200", "--json", "number,headRefName,author"))
+                                "--limit", "200", "--json", "number,headRefName,author,isCrossRepository"))
             allowed = {p["headRefName"] for p in prs
                        if not p["headRefName"].startswith(("autofix/", "devin/"))
                        and "devin" not in p["author"]["login"].lower()
                        and not p["author"].get("is_bot", False)}
             runs = [r for r in runs if r["headBranch"] in allowed][:1]
+        if runs:
+            failed = runs[0]
+            start_ref = failed["headSha"]
+            if failed["headBranch"] != repo["base_branch"]:
+                if trigger != "github_ci":
+                    prs = json.loads(gh(root, "pr", "list", "--repo", repo["github"], "--state", "open",
+                                        "--head", failed["headBranch"], "--json", "number,headRefName,isCrossRepository"))
+                source_prs = [p for p in prs if p["headRefName"] == failed["headBranch"]]
+                if not source_prs or any(p.get("isCrossRepository", False) for p in source_prs):
+                    raise ValueError("CI repair requires a same-repository source PR for a non-base branch")
+                publish_base = failed["headBranch"]
+            exists = subprocess.run(["git", "cat-file", "-e", f"{start_ref}^{{commit}}"],
+                                    cwd=root, capture_output=True)
+            if exists.returncode:
+                git(root, "fetch", "origin", start_ref)
+                if git(root, "rev-parse", "FETCH_HEAD") != start_ref:
+                    raise RuntimeError("Fetched CI commit does not match the failed run")
         contexts = [(None, gh(root, "run", "view", str(runs[0]["databaseId"]),
                               "--repo", repo["github"], "--log-failed")[-30000:])] if runs else []
     elif trigger == "github_push":
@@ -123,6 +142,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         agent = Agent(root, model, api_key)
         record = {"time": datetime.now(timezone.utc).isoformat(), "template": template_name,
                   "worktree": str(root),
+                  "start_ref": start_ref, "publish_base": publish_base,
                   "repo": repo_name, "issue": issue["number"] if issue else None,
                   "status": "error"}
         try:
@@ -130,17 +150,17 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             prompt = template["prompt"].format(**rendered)
             check = params.get("check_command", template.get("check_command"))
             check = check.format(**rendered) if check else None
-            branch = prepare(root, template_name, repo["base_branch"])
+            branch = prepare(root, template_name, start_ref)
             record["branch"] = branch
             summary = agent.run(prompt)
             if template.get("output_only"):
                 reports = agent.path("reports")
                 reports.mkdir(exist_ok=True)
                 (reports / f"{branch.rsplit('/', 1)[-1]}.md").write_text(summary + "\n")
-            outcome = complete(root, branch, repo["base_branch"], summary, check,
+            outcome = complete(root, branch, publish_base, summary, check,
                                repo.get("github"), dry_run,
                                (lambda: review_tree(config, root, git(root, "diff",
-                                   f"{repo['base_branch']}...HEAD"), log_dir))
+                                   f"{start_ref}...HEAD"), log_dir))
                                if params.get("review_before_pr", repo.get("review_before_pr",
                                    config.get("review_before_pr", False))) else None)
             record.update(outcome, summary=summary, status="ok")
