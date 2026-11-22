@@ -181,6 +181,33 @@ Reasoning fields returned by the server are retained in conversation history.
 These settings follow official documentation; real Tinker authentication, model access,
 and checkpoint behavior have not been tested here without credentials.
 
+## Using Tinker through KeyShield
+
+[KeyShield](https://github.com/lilaclilac09/keyshield) keeps the Tinker key in its vault, so
+the runner only holds a proxy-only token. Store the Tinker key in KeyShield under upstream
+`tinker`, then create a token under Developer → Create agent token (`POST /sessions/proxy-token`).
+That token can call `/vproxy/*` but not the vault or owner routes. Replace the `model` section with:
+
+```yaml
+model:
+  provider: keyshield
+  keyshield_upstream: tinker
+  model: thinkingmachines/Inkling:peft:262144
+  tool_mode: native
+  max_steps: 40
+```
+
+Export `KS_TOKEN` (the proxy-only token) and `KS_BASE` (your KeyShield API URL, or set
+`keyshield_base`) before running. Requests go to `$KS_BASE/vproxy/tinker/chat/completions` with
+`Authorization: Bearer <KS_TOKEN>`, and KeyShield adds the Tinker key for that one request. For a key stored in
+zero-knowledge mode, run `keyshield-proxy run` and set `keyshield_base: http://127.0.0.1:8787`
+with the local token it prints as `KS_TOKEN`. `keyshield_upstream` also accepts `openai`,
+`openrouter`, `groq` and `mistral`; for other upstreams set `keyshield_path` to the path from
+`/vproxy/<upstream>` to its OpenAI-compatible root. `base_url` cannot be overridden in this mode,
+and the KeyShield base must be `https://` (or `http://` on 127.0.0.1, localhost or ::1).
+`KS_TOKEN` (or your `api_key_env`) is removed from every command the runner starts.
+Requires a KeyShield release that registers the `tinker` upstream.
+
 ## Templates
 
 Template sources are in `templates/` (a link to the packaged directory `autofix/templates/`). They use Python `str.format` placeholders, not Jinja; write literal braces as `{{` / `}}`.

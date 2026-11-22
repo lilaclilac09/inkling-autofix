@@ -1,5 +1,5 @@
 model:
-  provider: openai  # Set tinker to use its endpoint and TINKER_API_KEY by default
+  provider: openai  # Set tinker to use its endpoint and TINKER_API_KEY by default, or keyshield (see README)
   tool_mode: native  # Use json for models without native tool calling
   base_url: https://your-inkling-endpoint.example/v1
   api_key_env: INKLING_API_KEY
