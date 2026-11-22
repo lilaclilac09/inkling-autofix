@@ -70,8 +70,12 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         if not repo.get("github"):
             raise ValueError("fix_github_issues requires repo.github and gh")
         filters = ["--label", "bug"] if template_name == "fix_github_issues" else []
+        issue_limit = int(params.get("issue_limit", config.get("issue_limit", 200)))
+        if issue_limit < 1:
+            raise ValueError("issue_limit must be positive")
         issues = json.loads(gh(root, "issue", "list", "--repo", repo["github"],
-                               "--state", "open", *filters, "--json", "number,title,body"))
+                               "--state", "open", *filters, "--limit", str(issue_limit),
+                               "--json", "number,title,body"))
         if trigger == "github_issues":
             selected = []
             for issue in issues:

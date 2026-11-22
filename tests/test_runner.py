@@ -151,6 +151,7 @@ def test_github_contexts(repo, fake_model, monkeypatch, tmp_path, template, empt
     def fake_gh(root, *args):
         calls.append(args)
         if args[:2] == ("issue", "list"):
+            assert args[args.index("--limit") + 1] == "200"
             return json.dumps([] if empty else [{"number": 1, "title": "Bug", "body": "Fix me"},
                                                 {"number": 2, "title": "Bug 2", "body": "Fix me too"}])
         if args[:2] == ("run", "list"):
