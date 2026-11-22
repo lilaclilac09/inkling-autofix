@@ -70,7 +70,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
         raise ValueError("custom requires --task or automation task")
     log_dir.mkdir(parents=True, exist_ok=True)
     trigger = template.get("trigger", {}).get("type", "manual")
-    start_ref = repo["base_branch"]
+    start_ref = repo.get("start_ref", repo["base_branch"])
     publish_base = repo["base_branch"]
     if trigger == "command":
         contexts = command_context(root, template, params)

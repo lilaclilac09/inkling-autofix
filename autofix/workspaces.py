@@ -32,6 +32,6 @@ def worktree(root, ref):
 
 
 def repo_config(config, repo_name, path, base=None):
-    repos = [{**r, "path": str(path), **({"base_branch": base} if base else {})}
+    repos = [{**r, "path": str(path), **({"start_ref": base} if base else {})}
              if r["name"] == repo_name else dict(r) for r in config["repos"]]
     return {**config, "repos": repos}
