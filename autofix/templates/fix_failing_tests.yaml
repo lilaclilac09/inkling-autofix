@@ -1,5 +1,5 @@
 name: fix_failing_tests
-description: 修复失败测试
+description: Fix failing tests
 trigger:
   type: schedule
 prompt: "Run {test_command}, diagnose failures, fix the implementation (do not weaken tests), and repeat until green."

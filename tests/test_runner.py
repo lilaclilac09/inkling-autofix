@@ -94,6 +94,7 @@ def test_full_fix(repo, fake_model, monkeypatch, tmp_path):
     logged = json.loads((tmp_path / "logs/runs.jsonl").read_text())
     assert logged["usage"]["total_tokens"] == 15
     assert fake_model["calls"][1]["messages"][-1]["role"] == "tool"
+    assert "finish summary in English" in fake_model["calls"][0]["messages"][0]["content"]
 
 
 @pytest.mark.parametrize("mode", ["empty", "failed_check", "no_tools", "max_steps"])

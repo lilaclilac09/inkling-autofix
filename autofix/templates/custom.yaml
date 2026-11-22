@@ -1,5 +1,5 @@
 name: custom
-description: 执行自由文本任务
+description: Run a free-form task
 trigger:
   type: manual
 prompt: "Complete this task: {task}. Inspect the repository and run relevant checks."
