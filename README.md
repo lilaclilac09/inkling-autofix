@@ -26,6 +26,45 @@ autofix daemon
 
 Use `autofix --config /absolute/path/config.yaml ...` to select a configuration file; relative repo paths are resolved against that file's directory. `autofix init` does not overwrite existing files. API keys are read only from the configured environment variable; do not put them in the config. Native mode requires `tools`/`tool_calls`; unsupported models fail with a clear error. Explicitly select `tool_mode: json` for the plain-text protocol described below.
 
+## Mac app (no Terminal)
+
+Download and unzip `Inkling-Autofix-mac.zip`, then move **Inkling Autofix.app** to
+Applications or another writable folder. This app is unsigned: on the first launch,
+right-click it, choose **Open**, and confirm. If needed, use **System Settings > Privacy
+& Security > Open Anyway** after trying to open it. Do not disable Gatekeeper globally.
+
+Install **Python 3.10+** using the graphical installer at
+[python.org](https://www.python.org/downloads/macos/) first. Git must be available too;
+macOS may offer to install Apple's Command Line Tools. No Terminal commands are required
+for the app's normal workflow. First launch needs Internet access to create a private
+virtual environment and install the bundled package plus pytest. Future launches reuse it;
+a changed bundled source hash triggers setup again.
+
+1. Double-click the app and enter your Tinker API key in the hidden-answer dialog. It is
+   stored in your login Keychain under service **Inkling Autofix**, account **tinker**.
+2. Choose **Fix something in a folder** or **Fix something in a single file**, select the
+   target, and choose **Describe the bug** or **Fix failing tests**.
+3. Wait for the proposal. The diff opens in TextEdit; the approval dialog shows the summary
+   and changed files. Inspect the diff, then choose **Apply changes** or **Cancel**.
+4. Only explicit approval invokes apply. Stale originals are refused. Out-of-scope proposals
+   offer **Choose a larger folder** without applying anything. Errors offer to open the log.
+
+**Settings** changes the model ID/checkpoint, selects native or JSON tools, and resets the
+API key. Default: `thinkingmachines/Inkling:peft:262144`, Tinker, native tools. The app does
+not commit, push, or publish. Project dependencies/test tools must already be available;
+tests and agent commands still run with your user privileges, not in an OS sandbox.
+
+Local data lives in `~/Library/Application Support/Inkling Autofix/`: `model.yaml`, `venv/`,
+`proposals/`, and `logs/launcher.log`. The key is never written there or logged; only the
+autofix proposal process receives it in its environment. To remove the credential without
+launching the app, open **Keychain Access**, search **Inkling Autofix**, and delete the
+generic-password item with account **tinker**. Deleting the app does not remove that item.
+You can separately delete the Application Support folder to remove local data.
+
+For developers, `bash macos/build_app.sh` builds the unsigned bundle on Linux or macOS:
+`dist/Inkling Autofix.app` and `dist/Inkling-Autofix-mac.zip`, including `READ ME FIRST.txt`.
+The archive preserves executable bits and symlinks. No Python runtime is bundled.
+
 ## Propose, review, then apply locally
 
 These commands do not require `config.yaml`. They never commit to your project, create a
