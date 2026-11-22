@@ -39,8 +39,11 @@ for the app's normal workflow. First launch needs Internet access to create a pr
 virtual environment and install the bundled package plus pytest. Future launches reuse it;
 a changed bundled source hash triggers setup again.
 
-1. Double-click the app and enter your Tinker API key in the hidden-answer dialog. It is
-   stored in your login Keychain under service **Inkling Autofix**, account **tinker**.
+1. Double-click the app. When creating `model.yaml`, it asks **How should Inkling Autofix
+   connect?** Choose **Direct Tinker** (default), **KeyShield hosted**, or **KeyShield local
+   ZK proxy**, then enter the appropriate credential in the hidden-answer dialog. Existing
+   model files keep their provider without a new connection prompt. The current connection
+   appears in the main menu.
 2. Choose **Fix something in a folder** or **Fix something in a single file**, select the
    target, and choose **Describe the bug** or **Fix failing tests**. For failing tests,
    paste the failing output (multiple lines) or choose a text output file; redact sensitive data first.
@@ -49,18 +52,40 @@ a changed bundled source hash triggers setup again.
 4. Only explicit approval invokes apply. Stale originals are refused. Out-of-scope proposals
    offer **Choose a larger folder** without applying anything. Errors offer to open the log.
 
-**Settings** changes the model ID/checkpoint, selects native or JSON tools, and resets the
-API key. Default: `thinkingmachines/Inkling:peft:262144`, Tinker, native tools. The app does
+**Settings > Change connection** switches connections and clears the in-memory credential.
+Hosted mode asks for the KeyShield base URL: HTTPS is required except HTTP on loopback
+(`127.0.0.1`, `localhost`, or `::1`). The local choice uses `http://127.0.0.1:8787`.
+HTTP loopback KeyShield URLs use the local credential account. Settings also changes the
+model ID/checkpoint, selects native or JSON tools, and resets only the current connection's
+credential. Default: `thinkingmachines/Inkling:peft:262144`, Direct Tinker, native tools. The app does
 not commit, push, or publish. **Validation limits:** the proposal agent has file tools only;
 it cannot execute commands or run tests. The review dialog states:
 "Validation: tests and commands were NOT run; review the diff yourself."
 It also lists skipped paths. Review the diff yourself and validate changes separately before trusting them.
 
+Connections and credentials:
+
+| Connection | `model.yaml` settings | Login Keychain account | Credential |
+|---|---|---|---|
+| Direct Tinker | `provider: tinker` | `tinker` | Tinker API key |
+| KeyShield hosted | `provider: keyshield`, `keyshield_upstream: tinker`, `keyshield_base: https://YOUR-HOST` | `keyshield` | Proxy-only agent token from **Developer > Create agent token** |
+| KeyShield local ZK proxy | Same KeyShield provider/upstream, `keyshield_base: http://127.0.0.1:8787` | `keyshield-local` | Local token printed by `keyshield-proxy` |
+
+**Deployment prerequisite:** hosted mode needs a KeyShield release containing the Tinker
+upstream ([keyshield#170](https://github.com/lilaclilac09/keyshield/pull/170)), which is **not
+deployed yet**. Do not use an upstream Tinker key as a proxy token. For ZK mode, run
+`keyshield-proxy run` locally first, then enter its printed local token in the app.
+The app does not start the proxy for you. KeyShield failures never fall back to direct
+Tinker: the error states **KeyShield request failed. Nothing was sent to Tinker directly.**
+
 Local data lives in `~/Library/Application Support/Inkling Autofix/`: `model.yaml`, `venv/`,
 `proposals/`, and `logs/launcher.log`. The key is never written there or logged; only the
-autofix proposal process receives it in its environment. To remove the credential without
+autofix proposal process receives it in its environment: only `TINKER_API_KEY` for direct
+mode, or only `KS_TOKEN` for KeyShield, never both. Keychain writes use stdin, not secret-bearing
+arguments. To remove a credential without
 launching the app, open **Keychain Access**, search **Inkling Autofix**, and delete the
-generic-password item with account **tinker**. Deleting the app does not remove that item.
+generic-password item with account **tinker**, **keyshield**, or **keyshield-local** as appropriate.
+The service is **Inkling Autofix** for all three. Deleting the app does not remove these items.
 You can separately delete the Application Support folder to remove local data.
 
 For developers, `bash macos/build_app.sh` builds the unsigned bundle on Linux or macOS:
