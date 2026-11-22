@@ -124,11 +124,7 @@ def test_launcher_folder_flow_with_native_tools_stubbed(bundle, tmp_path, fake_m
     target = project / "selected" / "code.txt"
     target.write_text("broken")
     (project / "outside.txt").write_text("do not change")
-    if scenario == "tests":
-        (project / "test_code.py").write_text(
-            "from pathlib import Path\n"
-            "def test_fixed():\n"
-            "    assert (Path(__file__).parent / 'selected/code.txt').read_text() == 'fixed'\n")
+    (project / ".env").write_text("fixture-configuration-not-for-model")
     subprocess.run(["git", "init", "-b", "main", str(project)], check=True, capture_output=True)
     git(project, "config", "user.name", "Test")
     git(project, "config", "user.email", "test@example.invalid")
@@ -198,17 +194,20 @@ elif "choose folder" in script:
     print(target.parent if scenario == "scope" and n == 0 else target.parent.parent)
 elif "How would you like to fix it?" in script:
     print("Fix failing tests" if scenario == "tests" else "Describe the bug")
+elif "Provide failing output." in script:
+    print("Paste failing test output")
 elif "default answer (item 2 of argv)" in script:
     if args[0].startswith("Enter a model ID"):
         print("tinker://run/sampler_weights/000080")
-    elif args[0].startswith("Enter the test command"):
-        assert args[1] == "python3 -m pytest -q"
-        print(args[1])
+    elif args[0].startswith("Paste the failing test output"):
+        print("AssertionError: broken value\\nExpected: fixed")
     else:
         print('Fix the "empty" value; $(touch SHOULD_NOT_EXIST)')
 elif "Review proposed changes" in script:
     assert target.read_text() == "broken", "User files changed before approval"
     assert "selected/code.txt" in args[0]
+    assert "Validation: tests and commands were NOT run; review the diff yourself." in args[0]
+    assert ".env" in args[0]
     if scenario == "stale": target.write_text("concurrent edit")
     print("Cancel" if scenario == "cancel" else "Apply changes")
 elif "Choose a larger folder" in script:
@@ -227,8 +226,7 @@ elif "Choose the tool mode:" in script:
 else:
     raise AssertionError(script)
 ''')
-    script = [("run_command", {"command": 'test -z "${TINKER_API_KEY+x}" && echo key-absent'}),
-              ("write_file", {"path": "selected/code.txt", "content": "fixed"}),
+    script = [("write_file", {"path": "selected/code.txt", "content": "fixed"}),
               ("finish", {"summary": "Fix the selected code"})]
     if scenario == "scope":
         script = [("write_file", {"path": "outside.txt", "content": "outside edit"}),
@@ -240,6 +238,8 @@ else:
            "PYTHONPATH": str(source), "STUB_STATE": str(state), "STUB_SCENARIO": scenario,
            "STUB_TARGET": str(target), "TINKER_API_KEY": "do-not-use-inherited-key"}
     launcher = bundle / "Inkling Autofix.app" / "Contents" / "MacOS" / "inkling-autofix"
+    originals = {p.relative_to(project): p.read_bytes() for p in project.rglob("*")
+                 if p.is_file() and ".git" not in p.relative_to(project).parts}
     result = subprocess.run([str(launcher)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     recorded = [json.loads(line) for line in events.read_text().splitlines()]
@@ -248,6 +248,9 @@ else:
     assert len(applies) == (0 if scenario in {"cancel", "failure"} else 1)
     expected = "concurrent edit" if scenario == "stale" else "broken" if scenario in {"cancel", "failure"} else "fixed"
     assert target.read_text() == expected
+    if scenario == "cancel":
+        assert originals == {p.relative_to(project): p.read_bytes() for p in project.rglob("*")
+                             if p.is_file() and ".git" not in p.relative_to(project).parts}
     assert (project / "outside.txt").read_text() == "do not change"
     assert not (tmp_path / "SHOULD_NOT_EXIST").exists()
     assert git(project, "rev-parse", "HEAD") == head
@@ -270,4 +273,8 @@ else:
         assert any(entry.get("operation") == "delete-generic-password" for entry in recorded)
         assert "tools" not in fake_model["calls"][0]
     if scenario == "tests":
-        assert ["-m", "pytest", "-q"] in calls
+        assert not any(args[:2] == ["-m", "pytest"] for args in calls)
+        proposing = next(args for args in calls if args[:3] == ["-m", "autofix", "propose"])
+        assert "--test-output" in proposing and "--test-command" not in proposing
+        pasted = Path(proposing[proposing.index("--test-output") + 1])
+        assert "Expected: fixed" in pasted.read_text()

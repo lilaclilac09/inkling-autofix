@@ -7,12 +7,14 @@ Inkling Autofix for Mac
    > Privacy & Security > Open Anyway for this app after attempting to open it.
    Never disable Gatekeeper globally.
 2. Install Python 3.10 or newer from https://www.python.org/downloads/macos/
-   using its graphical installer. Git must also be available; macOS may offer
-   to install Apple's Command Line Tools. No Terminal commands are required.
+   using its graphical installer. Git is not needed for proposals or apply.
+   No Terminal commands are required.
 3. Double-click the app. First-time setup needs an Internet connection to
    install the bundled Python package and pytest. Then enter your Tinker API
    key in the hidden-answer dialog; it is saved in your login Keychain.
-4. Pick a folder or file and describe the bug or supply a test command. Review
+4. Pick a folder or file and describe the bug or paste failing test output
+   (multiple lines) or choose a text file containing that output. Redact sensitive
+   data first. No test-command prompt is used. Review
    the diff in TextEdit. Only the Apply changes button writes to your files.
    The app does not commit, push, or publish your changes.
 
@@ -25,7 +27,14 @@ Access, search for "Inkling Autofix", and delete the generic-password item
 with account "tinker". You can delete the Application Support folder and app
 to remove local data; deleting the app alone does not remove the Keychain item.
 
-The app is unsigned and has not been notarized. Commands and tests run with
-your user privileges, not in an OS sandbox. Use trusted projects and inspect
-every proposal. Third-party project dependencies are not installed for you.
-Project secrets stored in files are not protected by environment filtering.
+Validation limits
+-----------------
+Validation: tests and commands were NOT run; review the diff yourself.
+The proposal agent has file tools only, not a shell. It copies only the selected
+scope. Symlinks, special files, secret-like names, dependencies/caches, binary
+files and files over 1 MB are skipped and listed in the review dialog. Skipped
+contents are never shown to the model. Ordinary source files and pasted output
+can still contain sensitive data: select narrowly and redact it first.
+Review and validate the proposed changes yourself. The app is unsigned and has
+not been notarized. It is not an OS sandbox. Nothing is executed from your
+project by propose or apply; separately running changed code is your decision.
