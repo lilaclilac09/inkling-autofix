@@ -10,6 +10,7 @@ import yaml
 from .agent import Agent
 from .gitops import complete, prepare
 from .providers import model_config
+from .events import command_context
 
 
 DATA = Path(__file__).parent
@@ -45,20 +46,39 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
     if template_name == "custom" and not values["task"].strip():
         raise ValueError("custom requires --task or automation task")
     log_dir.mkdir(parents=True, exist_ok=True)
-    if template_name == "fix_github_issues":
+    trigger = template.get("trigger", {}).get("type", "manual")
+    if trigger == "command":
+        contexts = command_context(root, template, params)
+    elif template_name == "fix_github_issues" or trigger == "github_issues":
         if not repo.get("github"):
             raise ValueError("fix_github_issues requires repo.github and gh")
+        filters = ["--label", "bug"] if template_name == "fix_github_issues" else []
         issues = json.loads(gh(root, "issue", "list", "--repo", repo["github"],
-                               "--state", "open", "--label", "bug", "--json", "number,title,body"))
+                               "--state", "open", *filters, "--json", "number,title,body"))
+        if trigger == "github_issues":
+            selected = []
+            for issue in issues:
+                detail = json.loads(gh(root, "issue", "view", str(issue["number"]),
+                                       "--repo", repo["github"], "--json", "comments"))
+                requests = [c for c in detail["comments"] if "/devin" in c["body"]]
+                if requests:
+                    selected.append({**issue, "requests": requests})
+            issues = selected
         contexts = [(issue, json.dumps(issue, ensure_ascii=False)) for issue in issues]
-    elif template_name == "fix_ci_failure":
+    elif template_name == "fix_ci_failure" or trigger == "github_ci":
         if not repo.get("github"):
             raise ValueError("fix_ci_failure requires repo.github and gh")
-        runs = json.loads(gh(root, "run", "list", "--repo", repo["github"], "--branch",
-                             repo["base_branch"], "--status", "failure", "--limit", "1",
-                             "--json", "databaseId"))
+        filters = ["--branch", repo["base_branch"]] if trigger != "github_ci" else ["--event", "pull_request"]
+        runs = json.loads(gh(root, "run", "list", "--repo", repo["github"], *filters,
+                             "--status", "failure", "--limit", "1", "--json", "databaseId"))
         contexts = [(None, gh(root, "run", "view", str(runs[0]["databaseId"]),
                               "--repo", repo["github"], "--log-failed")[-30000:])] if runs else []
+    elif trigger == "github_push":
+        if not repo.get("github"):
+            raise ValueError("GitHub push polling requires repo.github and gh")
+        contexts = [(None, gh(root, "api", f"repos/{repo['github']}/commits",
+                              "--method", "GET", "-f", f"sha={repo['base_branch']}",
+                              "-f", "per_page=1")[-30000:])]
     else:
         contexts = [(None, values["context"])]
     results = []
@@ -75,9 +95,16 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
             branch = prepare(root, template_name, repo["base_branch"])
             record["branch"] = branch
             summary = agent.run(prompt)
+            if template.get("output_only"):
+                reports = root / "reports"
+                reports.mkdir(exist_ok=True)
+                (reports / f"{branch.rsplit('/', 1)[-1]}.md").write_text(summary + "\n")
             outcome = complete(root, branch, repo["base_branch"], summary, check,
                                repo.get("github"), dry_run)
             record.update(outcome, summary=summary, status="ok")
+            if params.get("notify_command") and not dry_run:
+                subprocess.run(params["notify_command"], shell=True, cwd=root, input=summary,
+                               text=True, check=True, timeout=120, capture_output=True)
             if issue and outcome.get("pr"):
                 gh(root, "issue", "comment", str(issue["number"]), "--repo", repo["github"],
                    "--body", f"Autofix proposed a fix: {outcome['pr']}")

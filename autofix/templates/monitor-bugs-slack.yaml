@@ -1,0 +1,9 @@
+name: monitor-bugs-slack
+category: Monitoring & Triage
+description: "Triage Bug Reports"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: slack. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Triage this Slack bug report. Reproduce it where safe, trace the root cause in code, and draft a reply for the original thread with evidence, impact, and next steps. Do not claim a reproduction without running it.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

@@ -1,0 +1,9 @@
+name: dead-code-watch
+category: CI/CD & Release
+description: "Catch dead code in merged PRs"
+trigger:
+  type: github_push
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Review the latest base-branch push for newly orphaned code. Check references, dynamic dispatch, exports, and tests before calling code dead. Report confirmed cases and draft a message to the merger offering removal.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

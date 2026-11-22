@@ -1,0 +1,10 @@
+name: dependency-updates
+category: CI/CD & Release
+description: "Weekly Dependency Update"
+trigger:
+  type: schedule
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Scan outdated dependencies, review changelogs for breaking changes, and group proposed updates by risk. Implement a small compatible group with lockfiles, run tests, and report higher-risk groups for separate PRs.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

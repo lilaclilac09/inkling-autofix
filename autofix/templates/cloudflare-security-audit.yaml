@@ -1,0 +1,9 @@
+name: cloudflare-security-audit
+category: Security
+description: "Cloudflare Security Audit"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: cloudflare-audit-logs. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Review supplied Cloudflare audit logs for suspicious activity, configuration changes, and security issues. Correlate actors and timestamps, prioritize risks with evidence, and recommend safe investigation and remediation without changing production settings.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

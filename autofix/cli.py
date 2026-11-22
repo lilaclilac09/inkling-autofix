@@ -25,8 +25,12 @@ def main():
                 stream.write((DATA / "config.example.yaml").read_text())
             print(f"Created {args.config}")
         elif args.action == "templates":
-            for name, template in sorted(templates().items()):
-                print(f"{name:25} {template['description']}")
+            catalog = templates()
+            for category in sorted({t.get("category", "Core") for t in catalog.values()}):
+                print(f"\n{category}")
+                for name, template in sorted(catalog.items()):
+                    if template.get("category", "Core") == category:
+                        print(f"  {name:30} {template['description']}")
         else:
             config = load_config(args.config.resolve())
             logs = args.config.resolve().parent / "logs"

@@ -1,0 +1,10 @@
+name: security-dependency-vulns
+category: Security
+description: "Dependency Vulnerability Scanner"
+trigger:
+  type: schedule
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Scan dependency manifests and lockfiles against advisory databases using available audit tools. Prioritize known CVEs by severity and reachability. Apply scoped safe upgrades with regression checks and cite advisory identifiers.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

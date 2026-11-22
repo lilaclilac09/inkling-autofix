@@ -1,0 +1,9 @@
+name: capacity-planning
+category: Monitoring & Triage
+description: "Recurring Capacity Planning"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: datadog. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Review supplied usage and resource-utilization trends. Forecast capacity needs, flag services approaching limits, state assumptions and uncertainty, and recommend when and where to scale.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

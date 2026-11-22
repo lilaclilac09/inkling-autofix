@@ -1,0 +1,9 @@
+name: datadog-alert
+category: Monitoring & Triage
+description: "Investigate Alerts Triggered"
+trigger:
+  type: command
+required_env: [AUTOFIX_EVENT_COMMAND]
+notes: "Integrations: slack, datadog. Set event_command or AUTOFIX_EVENT_COMMAND to a trusted polling script that emits event data; empty output skips the run. Configure credentials in that script's environment. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: true
+prompt: "Investigate the incoming alert using the supplied Datadog metrics, logs, and traces. Correlate timestamps and recent code changes; separate confirmed causes from hypotheses and draft a root-cause analysis with mitigation for the alert thread.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nWrite the report under reports/ and summarize it for the notifier. Do not modify application code."

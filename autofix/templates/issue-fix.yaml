@@ -1,0 +1,10 @@
+name: issue-fix
+category: CI/CD & Release
+description: "/devin Issue Fix"
+trigger:
+  type: github_issues
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Read the supplied issue and its /devin request. Investigate the codebase, implement the requested fix with regression tests, and prepare an actionable fix PR summary.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

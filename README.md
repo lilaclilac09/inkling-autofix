@@ -85,6 +85,42 @@ Each automation in the config can specify extra template parameters directly or 
 
 The daemon runs enabled entries immediately on startup, then schedules them serially at `schedule_minutes` intervals; restarting resets the timers. `logs/runs.jsonl` stores each agent run's status, branch, check results, summary, and token usage; `logs/daemon.jsonl` stores scheduling errors. API keys and full model requests are not logged. Logs may contain code, command output, or issue contents; protect and rotate them yourself. Runs with no issues or failed CI runs are skipped normally. Failures leave the working state intact without automatically cleaning up or discarding changes. Subsequent runs reject a dirty working tree, requiring manual intervention.
 
+### Full automation catalog and event adapters
+
+All 23 catalog slugs are included alongside the original six templates. `autofix templates`
+groups them into Monitoring & Triage, CI/CD & Release, Security, Project Management, and Core.
+Every catalog YAML has a category, trigger, integration notes, and required environment list.
+There are no hidden Slack/Pylon/Datadog/Sentry/Linear/MCP clients: those templates use a
+trusted command adapter that fetches events or data with your own credentials:
+
+```yaml
+automations:
+  - name: alerts
+    template: datadog-alert
+    repo: myrepo
+    enabled: true
+    schedule_minutes: 10
+    event_command: /absolute/path/fetch-alerts.sh
+    notify_command: /absolute/path/post-report.sh
+```
+
+Alternatively export `AUTOFIX_EVENT_COMMAND`. Nonempty stdout becomes untrusted event context;
+empty stdout skips execution, and nonzero exit status fails the run. Output is bounded by
+the normal command limit. Adapter scripts own authentication, cursors, filtering, and routing
+(including thread IDs). `notify_command` receives the final summary on stdin; it is skipped
+in dry-run. Do not interpolate model content into shell commands. Report templates write
+under `reports/`; use the notifier to post to Slack, Notion, or ticketing systems.
+
+`issue-fix` polls open GitHub issues for comments containing `/devin`, `auto-fix-ci` polls
+failed pull-request runs, and merge/dead-code watches poll the latest base-branch commit
+via `gh`. Polling is not a webhook service and has no built-in deduplication: use external
+adapter cursors or disable a completed automation to avoid duplicate work. The CI template
+publishes a separate fix branch instead of pushing an existing author's PR. External-data
+templates that were recurring in the source catalog use command polling on the configured
+schedule. Golden-reference pattern enforcement is manual and requires an explicit reference.
+Never assume a report's proposed external changes have actually been applied; that is your
+notifier's responsibility. Review script permissions and report contents before enabling it.
+
 ## Running in the Mac background (optional launchd)
 
 Copy `examples/com.aileen.autofix.plist` to `~/Library/LaunchAgents/`, replace all `/Users/aileen` paths with your own absolute paths, and fill in the key (set file permissions to `600` and do not commit it), or use a secure credential injection method appropriate for your setup.

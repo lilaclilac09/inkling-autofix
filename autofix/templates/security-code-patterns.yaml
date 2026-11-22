@@ -1,0 +1,10 @@
+name: security-code-patterns
+category: Security
+description: "Code Pattern Enforcer"
+trigger:
+  type: manual
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Compare this repository against the golden reference specified in the task or context. Identify deviations from established architecture and code patterns, justify improvements, and implement a focused alignment change. Ask for a reference rather than inventing one.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"

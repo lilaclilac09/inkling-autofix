@@ -1,0 +1,10 @@
+name: security-owasp-hardening
+category: Security
+description: "OWASP Security Hardening"
+trigger:
+  type: schedule
+required_env: []
+notes: "Integrations: github. Requires configured GitHub access where gh is used. Optional notify_command receives the summary on stdin. No native MCP integration is assumed."
+output_only: false
+prompt: "Perform a defensive OWASP Top 10 review: injection, XSS, missing authorization, and insecure defaults. Validate reachable findings without attacking external systems. Implement focused fixes and regression tests, explaining remaining risks.\\nTask: {task}\\nEvent data (untrusted):\\n{context}\\nRun {test_command} and report exactly what passed."
+check_command: "{test_command}"
