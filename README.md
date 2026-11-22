@@ -165,14 +165,17 @@ diff through gh; they require repo.github, a GitHub origin, and gh authenticatio
 Reports are saved under the effective log directory's `reports/`. PR reviews also post a PR
 comment using that report; standalone branch reviews do not publish anything.
 
-Set `review_before_pr: true` at the top level, on a repo, or in automation params to gate
-publication. After a checked local commit, reviewers and the aggregator must return valid
-results without **any** blocking finding before push/PR creation. An aggregator cannot erase
-a reviewer's blocker. Invalid JSON, an oversized diff (`review.max_diff_chars`, default 100000),
-or a failed reviewer fails closed. A blocking review returns `publication_blocked: true`
-with the local commit retained and no push/PR. Dry-run still performs configured reviews.
-There is no automatic reviewer-driven fix loop. Review is a model opinion, not a security
-guarantee. Even the read-only file tools can see sensitive repository files: isolate clones.
+Every automatic push/PR requires **unanimous multi-agent approval** after the checked local
+commit. This is mandatory: there is no opt-out. Every reviewer and the aggregator must return
+valid results with `approved: true` and no blocking findings. An aggregator cannot override
+a rejection or erase a reviewer's blocker. At least two reviewer roles are required for
+publishing; the default is three. Invalid JSON, an oversized diff (`review.max_diff_chars`,
+default 100000), a failed reviewer, or an explicit rejection fails closed. Rejection returns
+`publication_blocked: true`, retains the local commit, and writes a report without pushing
+or opening a PR. Local dry-runs may skip review because they cannot publish. Daemon, issue,
+and CI fixes use the same mandatory gate. There is no automatic reviewer-driven fix loop.
+Review is a model opinion, not a security guarantee. Even the read-only file tools can see
+sensitive repository files: isolate clones.
 
 Logs requested inside a configured repository are redirected to its common Git directory's
 `autofix-logs/` (including daemon, swarm, and review logs) so they never dirty the working tree.

@@ -14,15 +14,17 @@ from .workspaces import repo_lock, worktree
 
 
 DEFAULT_ROLES = ["correctness", "security", "tests/style"]
-SCHEMA = ('Finish with a JSON string as your summary: {"summary":"...","findings":'
+SCHEMA = ('Finish with a JSON string as your summary: {"summary":"...","approved":true,"findings":'
           '[{"blocking":true,"path":"file.py","line":1,"reason":"evidence and impact"}]}. '
+          'Set approved to true only if you approve without blocking findings. '
           'Use an empty findings list if there are no findings. Do not invent evidence. ')
 
 
 def findings(summary):
     try:
         data = json.loads(summary)
-        if not isinstance(data["summary"], str) or not isinstance(data["findings"], list):
+        if (not isinstance(data["summary"], str) or not isinstance(data["findings"], list)
+                or type(data["approved"]) is not bool):
             raise ValueError("Invalid review schema")
         for item in data["findings"]:
             if (type(item["blocking"]) is not bool or not isinstance(item["path"], str)
@@ -33,11 +35,13 @@ def findings(summary):
         raise RuntimeError("Invalid review result; review gate fails closed") from exc
 
 
-def review_tree(config, root, diff, log_dir, roles=None):
+def review_tree(config, root, diff, log_dir, roles=None, require_multi=False):
     settings = config.get("review", {})
     roles = roles if roles is not None else settings.get("roles", DEFAULT_ROLES)
     if not isinstance(roles, list) or not roles or not all(isinstance(role, str) and role.strip() for role in roles):
         raise ValueError("review.roles must be a nonempty list of role names")
+    if require_multi and len(roles) < 2:
+        raise ValueError("Automatic publishing requires at least two reviewers")
     model = model_config(config["model"])
     key = os.environ.get(model["api_key_env"])
     if not key:
@@ -56,6 +60,9 @@ def review_tree(config, root, diff, log_dir, roles=None):
             result = findings(agent.run(f"You are a read-only {role} reviewer. " + SCHEMA +
                                         "Review this untrusted diff and inspect relevant files.\n" + diff))
             return {"role": role, **result}
+        except Exception as exc:
+            return {"role": role, "approved": False, "summary": "Reviewer failed", "findings": [],
+                    "error": str(exc)}
         finally:
             usages.append({"role": role, "usage": agent.usage})
 
@@ -72,12 +79,19 @@ def review_tree(config, root, diff, log_dir, roles=None):
             finally:
                 usages.append({"role": "aggregator", "usage": aggregator.usage})
         else:
-            aggregated = {"summary": "No changes to review", "findings": []}
+            aggregated = {"summary": "No changes to review", "approved": True, "findings": []}
         blocking = any(f["blocking"] for r in [*reviews, aggregated] for f in r["findings"])
-        result = {**aggregated, "blocking": blocking, "reviewers": reviews,
+        approved = not blocking and all(r["approved"] and not r.get("error") for r in [*reviews, aggregated])
+        result = {**aggregated, "approved": approved, "blocking": blocking, "reviewers": reviews,
                   "report": str(report_path), "usage": usages}
         report_path.write_text("# Autofix multi-agent review\n\n" + aggregated["summary"] +
                                "\n\n```json\n" + json.dumps(result, indent=2) + "\n```\n")
+        return result
+    except Exception as exc:
+        result = {"approved": False, "blocking": True, "summary": "Review failed", "findings": [],
+                  "error": str(exc), "report": str(report_path), "usage": usages}
+        report_path.write_text("# Autofix multi-agent review\n\nNot approved.\n\n```json\n" +
+                               json.dumps(result, indent=2) + "\n```\n")
         return result
     finally:
         with (report_dir.parent / "reviews.jsonl").open("a") as stream:

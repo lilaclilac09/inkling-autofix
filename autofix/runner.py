@@ -159,9 +159,8 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
             outcome = complete(root, branch, publish_base, summary, check,
                                repo.get("github"), dry_run,
                                (lambda: review_tree(config, root, git(root, "diff",
-                                   f"{start_ref}...HEAD"), log_dir))
-                               if params.get("review_before_pr", repo.get("review_before_pr",
-                                   config.get("review_before_pr", False))) else None)
+                                   f"{start_ref}...HEAD"), log_dir, require_multi=True))
+                               if repo.get("github") and not dry_run else None)
             record.update(outcome, summary=summary, status="ok")
             if params.get("notify_command") and not dry_run:
                 subprocess.run(params["notify_command"], shell=True, cwd=root, input=summary,

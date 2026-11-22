@@ -171,11 +171,13 @@ def test_review_invalid_aggregator_fails_closed(repo, fake_model, monkeypatch):
     def respond(request):
         prompt = request["messages"][1]["content"]
         return "finish", {"summary": "malformed" if "aggregator" in prompt else json.dumps({
-            "summary": "Looks good", "findings": []})}
+            "summary": "Looks good", "approved": True, "findings": []})}
 
     fake_model["handler"] = respond
-    with pytest.raises(RuntimeError, match="fails closed"):
-        review(config(repo, fake_model), "demo", branch="fix", log_dir=repo / "logs")
+    result = review(config(repo, fake_model), "demo", branch="fix", log_dir=repo / "logs")
+    assert not result["approved"]
+    assert "fails closed" in result["error"]
+    assert Path(result["report"]).exists()
     assert git(repo, "status", "--porcelain") == ""
 
 
@@ -209,7 +211,7 @@ def test_review_aggregation_preserves_blockers(repo, fake_model, monkeypatch):
         assert names == {"read_file", "list_files", "finish"}
         prompt = request["messages"][1]["content"]
         blocking = "read-only security reviewer" in prompt
-        return "finish", {"summary": json.dumps({"summary": "Reviewed", "findings": [
+        return "finish", {"summary": json.dumps({"summary": "Reviewed", "approved": not blocking, "findings": [
             {"blocking": True, "path": "calc.py", "line": 2, "reason": "Example finding"}
         ] if blocking else []})}
 
@@ -237,13 +239,12 @@ def test_review_empty_diff_and_invalid_results(repo, fake_model, monkeypatch):
 def test_blocking_review_prevents_push(repo, fake_model, monkeypatch):
     monkeypatch.setenv("INKLING_API_KEY", "fake")
     cfg = config(repo, fake_model)
-    cfg["review_before_pr"] = True
     cfg["repos"][0]["github"] = "owner/repo"
 
     def respond(request):
         prompt = request["messages"][1]["content"]
         if "reviewer" in prompt or "aggregator" in prompt:
-            return "finish", {"summary": json.dumps({"summary": "Block", "findings": [
+            return "finish", {"summary": json.dumps({"summary": "Block", "approved": False, "findings": [
                 {"blocking": True, "path": "note.txt", "line": 1, "reason": "Needs review"}]})}
         turns = sum(m["role"] == "assistant" for m in request["messages"])
         return (("write_file", {"path": "note.txt", "content": "a note"})
@@ -254,3 +255,52 @@ def test_blocking_review_prevents_push(repo, fake_model, monkeypatch):
     assert result["publication_blocked"] and not result["pr"]
     assert git(repo, "rev-list", "--count", "HEAD") == "2"
     assert git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("verdict", ["reject", "error", "approve"])
+def test_publication_requires_every_reviewer_to_approve(repo, fake_model, monkeypatch, verdict):
+    from autofix import gitops
+
+    monkeypatch.setenv("INKLING_API_KEY", "fake")
+    cfg = config(repo, fake_model)
+    cfg["repos"][0]["github"] = "owner/repo"
+    published = []
+    real_run = subprocess.run
+
+    def intercept(args, **kwargs):
+        if isinstance(args, list) and args[:2] == ["git", "push"]:
+            published.append(args)
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if isinstance(args, list) and args[:3] == ["gh", "pr", "create"]:
+            published.append(args)
+            return subprocess.CompletedProcess(args, 0, stdout="https://example.invalid/pr/1", stderr="")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(gitops.shutil, "which", lambda _: "/fake/gh")
+    monkeypatch.setattr(gitops.subprocess, "run", intercept)
+
+    def respond(request):
+        prompt = request["messages"][1]["content"]
+        if "reviewer" in prompt or "aggregator" in prompt:
+            security = "read-only security reviewer" in prompt
+            if security and verdict == "error":
+                return "finish", {"summary": "invalid review JSON"}
+            approved = not (security and verdict == "reject")
+            return "finish", {"summary": json.dumps({"summary": "Review result", "approved": approved,
+                                                       "findings": []})}
+        turns = sum(m["role"] == "assistant" for m in request["messages"])
+        return (("write_file", {"path": "note.txt", "content": "a note"})
+                if turns == 0 else ("finish", {"summary": "Add note"}))
+
+    fake_model["handler"] = respond
+    result = run(cfg, "custom", "demo", {"task": "Add note"}, False, repo / "logs")[0]
+    if verdict == "approve":
+        assert result["review"]["approved"]
+        assert len(published) == 2
+        assert result["pr"] == "https://example.invalid/pr/1"
+    else:
+        assert result["publication_blocked"]
+        assert not published
+        assert Path(result["review"]["report"]).exists()
+        assert not result["review"]["approved"]
+    assert git(repo, "rev-list", "--count", "HEAD") == "2"

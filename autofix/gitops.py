@@ -1,7 +1,9 @@
 import re
 import shutil
 import subprocess
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .agent import command
 
@@ -36,8 +38,24 @@ def complete(root, branch, base, summary, check, github, dry_run, review_callbac
         return {"changed": False, "check": result}
     git(root, "add", "--all")
     git(root, "commit", "-m", "autofix: " + summary.splitlines()[0][:100])
-    review = review_callback() if review_callback else None
-    if review and review["blocking"]:
+    publish_requested = bool(github and not dry_run)
+    review = None
+    if review_callback or publish_requested:
+        try:
+            if review_callback is None:
+                raise RuntimeError("Automatic publishing requires unanimous multi-agent review")
+            review = review_callback()
+        except Exception as exc:
+            common = Path(git(root, "rev-parse", "--git-common-dir"))
+            if not common.is_absolute():
+                common = root / common
+            reports = common / "autofix-logs" / "reports"
+            reports.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+            path = reports / f"review-error-{stamp}.md"
+            review = {"approved": False, "blocking": True, "error": str(exc), "report": str(path)}
+            path.write_text("# Autofix review not approved\n\n" + json.dumps(review, indent=2) + "\n")
+    if review is not None and (review.get("approved") is not True or review.get("blocking") is not False):
         return {"changed": True, "check": result, "pr": None, "review": review,
                 "publication_blocked": True}
     pr = None
