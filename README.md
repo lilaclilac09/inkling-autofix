@@ -133,10 +133,15 @@ With one template, `--agents N` creates N independent attempts; with several tem
 automation names, N is the concurrency limit. Automation names supply their configured params.
 Worker branches commit locally only. The runner records overlapping changed files, then merges
 successful worker branches in input order into `autofix/swarm-<timestamp>`. A resolver agent
-handles real Git conflicts, followed by that job's check_command. Failed resolutions/checks
-abort that merge and report the skipped branch. If abort cannot safely restore the prior
-commit, integration stops for manual inspection. Swarm never pushes or opens a PR automatically;
-inspect and publish the integration branch yourself.
+handles real Git conflicts. Each integration step must pass the accumulated check commands
+and unanimous multi-agent review of the integration diff. Any worker error, unresolved
+conflict, failed check, or review rejection/error stops the entire swarm with a nonzero exit
+status and a failure report under the log directory's `reports/`. No conflicted branch is
+skipped and no partial set is published. The in-progress merge is aborted where possible;
+if abort cannot safely restore the prior commit, inspect the retained worktree manually.
+Swarm never pushes or opens a PR automatically, even after success. Local intermediate
+branches may remain for diagnosis; a failed integration must not be published. Successful
+integration branches are local and have passed the same unanimous review requirement.
 
 A repository-level advisory lock in the common Git directory rejects other autofix runs
 while a run/swarm/review owns the repository. Workers only operate on separate worktrees.

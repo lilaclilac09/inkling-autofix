@@ -12,7 +12,7 @@ from autofix.gitops import git
 from autofix.providers import TINKER_BASE_URL, model_config
 from autofix.review import findings, review
 from autofix.runner import isolated_run, run, templates
-from autofix.swarm import swarm
+from autofix.swarm import SwarmFailure, swarm
 from autofix.workspaces import repo_lock
 from test_runner import config, fake_model, repo
 
@@ -117,7 +117,7 @@ def test_daemon_worktree_keeps_original_clean(repo, fake_model, monkeypatch):
 
 
 @pytest.mark.parametrize("resolve", [True, False])
-def test_swarm_conflict_resolved_or_skipped(repo, fake_model, monkeypatch, resolve):
+def test_swarm_conflict_resolved_or_stopped(repo, fake_model, monkeypatch, resolve):
     monkeypatch.setenv("INKLING_API_KEY", "fake")
     barrier = threading.Barrier(2)
     resolver_calls = []
@@ -125,6 +125,8 @@ def test_swarm_conflict_resolved_or_skipped(repo, fake_model, monkeypatch, resol
     def respond(request):
         prompt = request["messages"][1]["content"]
         turns = sum(m["role"] == "assistant" for m in request["messages"])
+        if "reviewer" in prompt or "aggregator" in prompt:
+            return "finish", {"summary": json.dumps({"summary": "Approved", "approved": True, "findings": []})}
         if "Resolve this swarm" in prompt:
             resolver_calls.append(request)
             if not resolve:
@@ -140,9 +142,28 @@ def test_swarm_conflict_resolved_or_skipped(repo, fake_model, monkeypatch, resol
     fake_model["handler"] = respond
     check = f"{sys.executable} -B -m pytest -q"
     jobs = [("custom", {"task": task, "check_command": check}) for task in ["left attempt", "right attempt"]]
-    result = swarm(config(repo, fake_model), "demo", jobs, 2, repo / "logs")
+    if resolve:
+        result = swarm(config(repo, fake_model), "demo", jobs, 2, repo / "logs")
+    else:
+        with pytest.raises(SwarmFailure) as failure:
+            swarm(config(repo, fake_model), "demo", jobs, 2, repo / "logs")
+        result = failure.value.result
+        assert result["status"] == "failed" and not result["published"]
+        assert Path(result["report"]).exists()
+        from autofix import cli
+
+        monkeypatch.setattr(cli, "load_config", lambda _: config(repo, fake_model))
+
+        def stopped(*args, **kwargs):
+            raise failure.value
+
+        monkeypatch.setattr(cli, "swarm", stopped)
+        monkeypatch.setattr(sys, "argv", ["autofix", "swarm", "custom", "--repo", "demo"])
+        with pytest.raises(SystemExit) as exit_status:
+            cli.main()
+        assert exit_status.value.code == 1
     assert len(result["merged"]) == (2 if resolve else 1)
-    assert len(result["skipped"]) == (0 if resolve else 1)
+    assert len(result["failures"]) == (0 if resolve else 1)
     assert resolver_calls
     assert any("calc.py" in files for files in result["overlaps"].values())
     assert all(item["result"]["returncode"] == 0 for item in result["checks"])
@@ -157,7 +178,31 @@ def test_swarm_empty_worker_results(repo, fake_model, monkeypatch):
     fake_model["script"] = [("finish", {"summary": "No changes"})]
     result = swarm(config(repo, fake_model), "demo", [("custom", {"task": "Inspect"})],
                    1, repo / "logs")
-    assert not result["merged"] and not result["skipped"]
+    assert not result["merged"] and not result["failures"]
+    assert git(repo, "status", "--porcelain") == ""
+
+
+def test_swarm_one_reviewer_rejects_stops_without_publishing(repo, fake_model, monkeypatch, tmp_path):
+    monkeypatch.setenv("INKLING_API_KEY", "fake")
+
+    def respond(request):
+        prompt = request["messages"][1]["content"]
+        if "reviewer" in prompt or "aggregator" in prompt:
+            approved = "read-only security reviewer" not in prompt
+            return "finish", {"summary": json.dumps({"summary": "Review", "approved": approved, "findings": []})}
+        turns = sum(m["role"] == "assistant" for m in request["messages"])
+        return (("write_file", {"path": "note.txt", "content": "a note"})
+                if turns == 0 else ("finish", {"summary": "Add note"}))
+
+    fake_model["handler"] = respond
+    with pytest.raises(SwarmFailure, match="unanimous") as failure:
+        swarm(config(repo, fake_model), "demo", [("custom", {"task": "Add note"})],
+              1, tmp_path / "logs")
+    result = failure.value.result
+    assert not result["published"] and not result["merged"]
+    assert not result["reviews"][0]["approved"]
+    assert Path(result["report"]).exists()
+    assert git(repo, "branch", "--show-current") == "main"
     assert git(repo, "status", "--porcelain") == ""
 
 
