@@ -88,6 +88,15 @@ def test_command_event_empty_success_error(repo, monkeypatch):
         command_context(repo, template, {"event_command": "exit 1"})
 
 
+def test_event_adapter_stderr_is_diagnostic_not_an_event(repo, tmp_path):
+    template = templates()["datadog-alert"]
+    params = {"event_command": "printf 'no new events' >&2"}
+    assert command_context(repo, template, params, tmp_path) == []
+    assert "no new events" in (tmp_path / "event_diagnostics.jsonl").read_text()
+    params["event_command"] = "printf event; printf warning >&2"
+    assert command_context(repo, template, params, tmp_path) == [(None, "event")]
+
+
 def test_lock_rejects_same_repository(repo):
     with repo_lock(repo):
         with pytest.raises(RuntimeError, match="locked"):

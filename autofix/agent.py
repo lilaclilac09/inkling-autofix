@@ -13,19 +13,22 @@ from .providers import model_config
 LIMIT = 16000
 
 
-def command(root, command, timeout=120):
+def command(root, command, timeout=120, separate_output=False):
     process = subprocess.Popen(command, cwd=root, shell=True, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, start_new_session=True)
     try:
         stdout, stderr = process.communicate(timeout=min(max(int(timeout), 1), 600))
-        return {"returncode": process.returncode, "output": (stdout + stderr)[-LIMIT:]}
+        result = {"returncode": process.returncode, "output": (stdout + stderr)[-LIMIT:]}
     except subprocess.TimeoutExpired:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         stdout, stderr = process.communicate()
-        return {"returncode": 124, "output": (stdout + stderr + "\nCommand timed out")[-LIMIT:]}
+        result = {"returncode": 124, "output": (stdout + stderr + "\nCommand timed out")[-LIMIT:]}
+    if separate_output:
+        result.update(stdout=stdout[-LIMIT:], stderr=stderr[-LIMIT:])
+    return result
 
 
 class Agent:

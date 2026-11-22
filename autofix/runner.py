@@ -73,7 +73,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
     start_ref = repo.get("start_ref", repo["base_branch"])
     publish_base = repo["base_branch"]
     if trigger == "command":
-        contexts = command_context(root, template, params)
+        contexts = command_context(root, template, params, log_dir)
     elif template_name == "fix_github_issues" or trigger == "github_issues":
         if not repo.get("github"):
             raise ValueError("fix_github_issues requires repo.github and gh")
