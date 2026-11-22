@@ -55,6 +55,39 @@ def test_keyshield_run_uses_vproxy_and_session_token(repo, fake_model, monkeypat
     assert fake_model["authorization"] == "Bearer ks-proxy-token"
 
 
+@pytest.mark.parametrize("base", ["http://ks.example", "https://", "ftp://ks.example",
+                                  "https://user:pw@ks.example", "http://127.0.0.1.ks.example"])
+def test_keyshield_base_requires_https_or_loopback(base):
+    with pytest.raises(ValueError, match="https URL or http on loopback"):
+        model_config({"provider": "keyshield", "keyshield_base": base, "model": "m"})
+
+
+@pytest.mark.parametrize("base", ["https://ks.example", "http://127.0.0.1:8787", "http://localhost:8787",
+                                  "http://[::1]:8787"])
+def test_keyshield_base_accepts_https_and_loopback(base):
+    assert model_config({"provider": "keyshield", "keyshield_base": base, "model": "m"})[
+        "base_url"] == f"{base}/vproxy/tinker"
+
+
+@pytest.mark.parametrize("key_env", [None, "MY_KS_TOKEN"])
+def test_keyshield_token_hidden_from_agent_and_check(repo, fake_model, monkeypatch, tmp_path, key_env):
+    names = sorted({"KS_TOKEN", key_env or "KS_TOKEN"})
+    for name in names:
+        monkeypatch.setenv(name, "ks-proxy-token")
+    probe = f"{sys.executable} -c \"import os; assert not any(n in os.environ for n in {names!r}); print('absent')\""
+    base = fake_model["model"].pop("base_url").removesuffix("/v1")
+    fake_model["model"].update(provider="keyshield", keyshield_base=base)
+    if key_env:
+        fake_model["model"]["api_key_env"] = key_env
+    fake_model["script"] = [("run_command", {"command": probe}), ("finish", {"summary": "Checked"})]
+    records = run(config(repo, fake_model), "custom", "demo",
+                  {"task": "Inspect", "check_command": probe}, True, tmp_path / "logs")
+    assert records[0]["check"]["returncode"] == 0 and "absent" in records[0]["check"]["output"]
+    result = json.loads(fake_model["calls"][1]["messages"][-1]["content"])
+    assert result["returncode"] == 0 and "absent" in result["output"]
+    assert fake_model["authorization"] == "Bearer ks-proxy-token"
+
+
 def test_json_tool_loop(repo, fake_model, monkeypatch, tmp_path):
     monkeypatch.setenv("TINKER_API_KEY", "fake-key")
     fake_model["model"].update(provider="tinker", tool_mode="json")

@@ -182,7 +182,9 @@ Export `KS_TOKEN` (the proxy-only token) and `KS_BASE` (your KeyShield API URL, 
 zero-knowledge mode, run `keyshield-proxy run` and set `keyshield_base: http://127.0.0.1:8787`
 with the local token it prints as `KS_TOKEN`. `keyshield_upstream` also accepts `openai`,
 `openrouter`, `groq` and `mistral`; for other upstreams set `keyshield_path` to the path from
-`/vproxy/<upstream>` to its OpenAI-compatible root. `base_url` cannot be overridden in this mode.
+`/vproxy/<upstream>` to its OpenAI-compatible root. `base_url` cannot be overridden in this mode,
+and the KeyShield base must be `https://` (or `http://` on 127.0.0.1, localhost or ::1).
+`KS_TOKEN` (or your `api_key_env`) is removed from every command the runner starts.
 Requires a KeyShield release that registers the `tinker` upstream.
 
 ## Templates
