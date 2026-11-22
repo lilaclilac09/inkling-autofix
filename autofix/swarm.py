@@ -10,6 +10,7 @@ from .gitops import git
 from .providers import model_config
 from .runner import _run, templates
 from .workspaces import repo_config, repo_lock, worktree
+from .logs import safe_log_dir
 
 
 def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
@@ -17,6 +18,7 @@ def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
         raise ValueError("swarm requires jobs and agents >= 1")
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
     root = Path(repo["path"]).resolve()
+    log_dir = safe_log_dir(config, log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     with repo_lock(root):
         base = git(root, "rev-parse", repo["base_branch"])

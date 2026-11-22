@@ -12,6 +12,7 @@ from .gitops import complete, prepare
 from .providers import model_config
 from .events import command_context
 from .workspaces import repo_config, repo_lock, worktree
+from .logs import safe_log_dir
 
 
 DATA = Path(__file__).parent
@@ -34,6 +35,7 @@ def gh(root, *args):
 
 
 def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
+    log_dir = safe_log_dir(config, log_dir)
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
     root = Path(repo["path"]).resolve()
     with repo_lock(root):
@@ -41,6 +43,7 @@ def run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Pa
 
 
 def isolated_run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
+    log_dir = safe_log_dir(config, log_dir)
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
     root = Path(repo["path"]).resolve()
     with repo_lock(root):
@@ -50,6 +53,7 @@ def isolated_run(config, template_name, repo_name, params=None, dry_run=False, l
 
 
 def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=Path("logs")):
+    log_dir = safe_log_dir(config, log_dir)
     template = templates()[template_name]
     repo = next(r for r in config["repos"] if r["name"] == repo_name)
     root = Path(repo["path"]).resolve()
@@ -142,6 +146,7 @@ def _run(config, template_name, repo_name, params=None, dry_run=False, log_dir=P
 
 
 def daemon(config, log_dir):
+    log_dir = safe_log_dir(config, log_dir)
     due = {}
     while True:
         for index, automation in enumerate(config.get("automations", [])):

@@ -193,6 +193,17 @@ def test_empty_finish_summary_uses_default(repo, fake_model):
     assert git(repo, "show", "-s", "--format=%s") == "autofix: Complete automated task"
 
 
+def test_logs_inside_repo_do_not_dirty_next_run(repo, fake_model, monkeypatch):
+    monkeypatch.setenv("INKLING_API_KEY", "fake")
+    fake_model["script"] = [("finish", {"summary": "No changes"})] * 2
+    for _ in range(2):
+        run(config(repo, fake_model), "custom", "demo", {"task": "Inspect only"},
+            True, repo / "logs")
+    assert not (repo / "logs").exists()
+    assert (repo / ".git/autofix-logs/runs.jsonl").exists()
+    assert git(repo, "status", "--porcelain") == ""
+
+
 def test_daemon_schedule_and_error_logging(monkeypatch, tmp_path):
     clock = [0]
     invocations = []
