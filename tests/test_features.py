@@ -116,8 +116,8 @@ def test_daemon_worktree_keeps_original_clean(repo, fake_model, monkeypatch):
     assert not (repo / "logs").exists()
 
 
-@pytest.mark.parametrize("resolve", [True, False])
-def test_swarm_conflict_resolved_or_stopped(repo, fake_model, monkeypatch, resolve):
+@pytest.mark.parametrize("resolve,fail_check", [(True, False), (False, False), (True, True)])
+def test_swarm_conflict_resolved_or_stopped(repo, fake_model, monkeypatch, resolve, fail_check):
     monkeypatch.setenv("INKLING_API_KEY", "fake")
     barrier = threading.Barrier(2)
     resolver_calls = []
@@ -142,7 +142,17 @@ def test_swarm_conflict_resolved_or_stopped(repo, fake_model, monkeypatch, resol
     fake_model["handler"] = respond
     check = f"{sys.executable} -B -m pytest -q"
     jobs = [("custom", {"task": task, "check_command": check}) for task in ["left attempt", "right attempt"]]
-    if resolve:
+    if fail_check:
+        from autofix import swarm as swarm_module
+
+        checks = []
+
+        def check_resolution(root, check):
+            checks.append(check)
+            return {"returncode": int(len(checks) == 2), "output": "Integration check"}
+
+        monkeypatch.setattr(swarm_module, "command", check_resolution)
+    if resolve and not fail_check:
         result = swarm(config(repo, fake_model), "demo", jobs, 2, repo / "logs")
     else:
         with pytest.raises(SwarmFailure) as failure:
@@ -162,11 +172,11 @@ def test_swarm_conflict_resolved_or_stopped(repo, fake_model, monkeypatch, resol
         with pytest.raises(SystemExit) as exit_status:
             cli.main()
         assert exit_status.value.code == 1
-    assert len(result["merged"]) == (2 if resolve else 1)
-    assert len(result["failures"]) == (0 if resolve else 1)
+    assert len(result["merged"]) == (2 if resolve and not fail_check else 1)
+    assert len(result["failures"]) == (0 if resolve and not fail_check else 1)
     assert resolver_calls
     assert any("calc.py" in files for files in result["overlaps"].values())
-    assert all(item["result"]["returncode"] == 0 for item in result["checks"])
+    assert any(item["result"]["returncode"] != 0 for item in result["checks"]) == fail_check
     assert result["branch"].startswith("autofix/swarm-")
     assert (Path(result["worktree"]) / "calc.py").read_text().endswith("return a + b\n")
     assert git(repo, "branch", "--show-current") == "main"
@@ -184,10 +194,19 @@ def test_swarm_empty_worker_results(repo, fake_model, monkeypatch):
 
 def test_swarm_one_reviewer_rejects_stops_without_publishing(repo, fake_model, monkeypatch, tmp_path):
     monkeypatch.setenv("INKLING_API_KEY", "fake")
+    from autofix import swarm as swarm_module
+
+    def integration_check(root, check):
+        (root / "generated.txt").write_text("Check-generated file must be reviewed")
+        return {"returncode": 0, "output": "Checked"}
+
+    monkeypatch.setattr(swarm_module, "command", integration_check)
 
     def respond(request):
         prompt = request["messages"][1]["content"]
         if "reviewer" in prompt or "aggregator" in prompt:
+            if "reviewer" in prompt:
+                assert "generated.txt" in prompt
             approved = "read-only security reviewer" not in prompt
             return "finish", {"summary": json.dumps({"summary": "Review", "approved": approved, "findings": []})}
         turns = sum(m["role"] == "assistant" for m in request["messages"])
@@ -196,7 +215,7 @@ def test_swarm_one_reviewer_rejects_stops_without_publishing(repo, fake_model, m
 
     fake_model["handler"] = respond
     with pytest.raises(SwarmFailure, match="unanimous") as failure:
-        swarm(config(repo, fake_model), "demo", [("custom", {"task": "Add note"})],
+        swarm(config(repo, fake_model), "demo", [("custom", {"task": "Add note", "check_command": "true"})],
               1, tmp_path / "logs")
     result = failure.value.result
     assert not result["published"] and not result["merged"]
@@ -302,7 +321,7 @@ def test_blocking_review_prevents_push(repo, fake_model, monkeypatch):
     assert git(repo, "status", "--porcelain") == ""
 
 
-@pytest.mark.parametrize("verdict", ["reject", "error", "approve"])
+@pytest.mark.parametrize("verdict", ["reject", "error", "exception", "approve"])
 def test_publication_requires_every_reviewer_to_approve(repo, fake_model, monkeypatch, verdict):
     from autofix import gitops
 
@@ -330,6 +349,8 @@ def test_publication_requires_every_reviewer_to_approve(repo, fake_model, monkey
             security = "read-only security reviewer" in prompt
             if security and verdict == "error":
                 return "finish", {"summary": "invalid review JSON"}
+            if security and verdict == "exception":
+                return None
             approved = not (security and verdict == "reject")
             return "finish", {"summary": json.dumps({"summary": "Review result", "approved": approved,
                                                        "findings": []})}

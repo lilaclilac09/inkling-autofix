@@ -119,12 +119,12 @@ def swarm(config, repo_name, jobs, agents=3, log_dir=Path("logs")):
                             raise RuntimeError(f"Integration check failed: {checked['output']}")
                     if git(integration, "branch", "--show-current") != branch:
                         raise RuntimeError("Check changed the integration branch")
+                    git(integration, "add", "--all")
                     review = review_tree(config, integration, git(integration, "diff", base),
                                          log_dir, require_multi=True)
                     result["reviews"].append(review)
                     if not review["approved"] or review["blocking"]:
                         raise RuntimeError("Integration did not receive unanimous review approval")
-                    git(integration, "add", "--all")
                     git(integration, "commit", "-m", f"autofix: integrate {candidate}")
                     result["merged"].append(candidate)
                     seen.update({file: candidate for file in files})
