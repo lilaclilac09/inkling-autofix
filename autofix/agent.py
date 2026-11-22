@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import signal
 import subprocess
 from pathlib import Path
 
@@ -12,13 +14,18 @@ LIMIT = 16000
 
 
 def command(root, command, timeout=120):
+    process = subprocess.Popen(command, cwd=root, shell=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, start_new_session=True)
     try:
-        result = subprocess.run(command, cwd=root, shell=True, capture_output=True,
-                                text=True, timeout=min(max(int(timeout), 1), 600))
-        return {"returncode": result.returncode,
-                "output": (result.stdout + result.stderr)[-LIMIT:]}
+        stdout, stderr = process.communicate(timeout=min(max(int(timeout), 1), 600))
+        return {"returncode": process.returncode, "output": (stdout + stderr)[-LIMIT:]}
     except subprocess.TimeoutExpired:
-        return {"returncode": 124, "output": "Command timed out"}
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = process.communicate()
+        return {"returncode": 124, "output": (stdout + stderr + "\nCommand timed out")[-LIMIT:]}
 
 
 class Agent:
