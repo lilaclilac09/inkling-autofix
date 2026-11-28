@@ -93,3 +93,33 @@ remaining risks: historical closer gaps; native macOS/Gatekeeper/Keychain/launch
 manual steps: validate native app on macOS with genuine stills/walkthrough and test intended model connection in an isolated authorized clone.
 safe to merge: yes
 ```
+
+## 2026-11-28 macOS follow-up (native host)
+
+Follow-up to the 2026-11-22 audit, run on the maintainer's Mac (macOS 27.x, Apple Silicon, Homebrew Python 3.14.2), not on the original Linux host. Documentation-only changes; no product code, dependencies, configuration or tests changed. No secret values are included; the Keychain item was inspected by attribute only.
+
+Findings on this host:
+
+| Item | Result |
+|---|---|
+| Native build | `bash macos/build_app.sh` on macOS produced `dist/Inkling Autofix.app` and `dist/Inkling-Autofix-mac.zip`. |
+| First-run setup | Launcher created `~/Library/Application Support/Inkling Autofix/venv` with Python 3.14.2 and installed the bundled package plus pytest (log: `Successfully installed ... inkling-autofix-0.1.0`). |
+| Connection flow | The connection dialog (Direct Tinker) was completed by the maintainer by hand; the Tinker API key was entered into the hidden-answer prompt. `security find-generic-password -s "Inkling Autofix"` reports account `tinker` present. `model.yaml` holds `provider: tinker`, `tool_mode: native`, and no key material. |
+| Test suite | `/opt/homebrew/bin/python3 -m venv audit venv`; `pip install -e '.[test]'`; full suite on macOS: **141 passed in 121.15s**. |
+| Native UI evidence (stills / walkthrough) | NOT obtained. The app is `LSUIElement` and its dialogs are `osascript` children; cua-driver 0.52.0 lists apps but `capture` returns "no on-screen window matched" for both the app and osascript, and whole-screen capture was refused to avoid reading unrelated personal windows. `screencapture` fails with `could not create image from display` without a Screen Recording grant for the capturing process. |
+| KeyShield | Not exercised; maintainer reports the KeyShield side is still in progress. Untested here. |
+
+Blocker update: the 2026-11-22 blocker "native macOS UI/runtime evidence" is partially reduced — install, first-run venv, credential storage, and the full test suite now have native-Mac evidence. Still blocked on genuine stills/walkthrough: the launcher's LSUIElement + osascript dialogs do not surface to the accessibility/screenshot driver on this host. Remaining risk: Gatekeeper first-launch, Keychain-dependent headless runs, and live Tinker end-to-end calls (beyond auth storage) remain unverified.
+
+Next human action: with Screen Recording granted to the capturing tool and a Space with no personal windows, run the app and capture the menu/dialog stills and an interaction walkthrough; then re-check `scripts/check_acceptance.py` on this note.
+
+```txt
+root cause: 2026-11-22 audit required native macOS evidence unavailable on Linux; this Mac provides build/install/credentials/test-suite proof, but UI stills remain blocked because the launcher's LSUIElement + osascript dialogs are not visible to the accessibility/screen driver and screencapture lacks a display grant.
+files changed: notes/acceptance-audit-2026-11-22.md.
+checks run: macOS build passed; first-run venv install succeeded; 141/141 tests passed on Python 3.14.2; Keychain item present (attributes only); screencapture and cua-driver window capture both fail on this host; no screenshots produced.
+manual QA: maintainer completed the connection dialog manually on macOS; diff/walkthrough not captured.
+verification: build log and pytest output observed on this host (pip/pytest logs under ~/audit-artifacts/venv); launcher log at ~/Library/Application Support/Inkling Autofix/logs/launcher.log; no native UI, live Tinker call, or KeyShield flow verified.
+remaining risks: native UI/Interaction proof, Gatekeeper behavior, live provider and KeyShield verification, historical closer gaps.
+manual steps: grant Screen Recording to the capture tool (or use a clean Space), re-run the app, capture 390×844 stills and a walkthrough, then re-run the acceptance checker.
+safe to merge: yes after manual env/config step
+```
